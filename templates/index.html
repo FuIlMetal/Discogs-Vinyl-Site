@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Vinyl Collection</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header-section">
+      <h1>🎵 Vinyl Collection</h1>
+      <button id="randomRecordBtn" class="random-btn" onclick="openRandomRecord()" aria-label="Open random record">
+        🎲 Random Record
+      </button>
+    </div>
+
+    <div class="controls">
+        <input id="searchBar" type="text" placeholder="Search artists or albums…" oninput="applySearch()">
+        <select id="genreFilter" onchange="applyGenreFilter()">
+            <option value="">All Genres</option>
+            {% for genre in genres %}
+            <option value="{{ genre }}">{{ genre }}</option>
+            {% endfor %}
+        </select>
+        <div class="sort-controls">
+            <select id="sortSelect" onchange="applySort()">
+                <option value="artist">Sort by Artist</option>
+                <option value="year">Sort by Year</option>
+                <option value="play_count">Sort by Play Count</option>
+            </select>
+            <button id="sortDirection" onClick="toggleDirection()" aria-label="Toggle sort direction">↓</button>
+        </div>
+    </div>
+
+    <div id="record-list" class="collection"></div>
+</div>
+<!-- Modal for track list -->
+<div id="trackModal" class="modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+        <div class="modal-header">
+            <img id="modalImage" src="" alt="">
+            <div class="modal-header-info">
+                <div>
+                    <h2 id="modalTitle"></h2>
+                    <p id="modalArtist"></p>
+                    <p id="modalYear"></p>
+                </div>
+                <div class="play-count-section">
+                    <div class="play-count-display">
+                        <span class="play-count-label">Plays:</span>
+                        <span id="playCount">0</span>
+                    </div>
+                    <div class="play-count-buttons">
+                        <button id="playRecordBtn" class="play-btn" onclick="incrementPlayCount()" aria-label="Mark as played">
+                            ▶ Play Record
+                        </button>
+                        <button id="undoPlayBtn" class="undo-btn" onclick="decrementPlayCount()" aria-label="Undo play">
+                            ↶
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-body">
+            <h3>Track List</h3>
+            <ol id="trackList"></ol>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* Sample data for demonstration */
+    const allRecords = JSON.parse('{{ collection | tojson | safe }}');
+    
+    let filteredRecords = [...allRecords];
+    let sortAscending = true;
+
+
+    function render() {
+        const list = document.getElementById("record-list");
+        
+        if (filteredRecords.length === 0) {
+            list.innerHTML = '<div class="empty-state">No records found. Try a different search.</div>';
+            return;
+        }
+        
+        list.innerHTML = "";
+
+        filteredRecords.forEach(item => {
+            const div = document.createElement("div");
+            div.className = "record-card";
+            div.onclick = () => openModal(item);
+            div.innerHTML = `
+                <img src="${item.thumb}" alt="${item.title}">
+                <div class="info">
+                    <div class="title">${item.title}</div>
+                    <div class="artist">${item.artist}</div>
+                    <div class="year">${item.year || "Unknown"}</div>
+                </div>
+            `;
+
+            list.appendChild(div);
+        });
+    }
+
+    function applyFilters() {
+        const q = document.getElementById("searchBar").value.toLowerCase();
+        const selectedGenre = document.getElementById("genreFilter").value;
+        
+        filteredRecords = allRecords.filter(r => {
+            // Apply search filter
+            const matchesSearch = !q || 
+                r.artist.toLowerCase().includes(q) ||
+                r.title.toLowerCase().includes(q);
+            
+            // Apply genre filter
+            const matchesGenre = !selectedGenre || 
+                (r.genres && r.genres.includes(selectedGenre));
+            
+            return matchesSearch && matchesGenre;
+        });
+        
+        applySort();
+    }
+
+    function applySearch() {
+        applyFilters();
+    }
+
+    function applyGenreFilter() {
+        applyFilters();
+    }
+
+    function applySort() {
+        const sortBy = document.getElementById("sortSelect").value;
+
+        if (sortBy === "artist") {
+            filteredRecords.sort((a, b) => {
+                const comparison = a.artist.localeCompare(b.artist);
+                return sortAscending ? comparison : -comparison;});
+        } else if (sortBy === "year") {
+            filteredRecords.sort((a, b) => {
+                const comparison = (a.year || 0) - (b.year || 0);
+                return sortAscending ? comparison : -comparison;
+            });
+        } else if (sortBy === "play_count") {
+            filteredRecords.sort((a, b) => {
+                const comparison = (a.play_count || 0) - (b.play_count || 0);
+                return sortAscending ? comparison : -comparison;
+            });
+        }
+
+        render();
+    }
+
+    function toggleDirection() {
+        sortAscending = !sortAscending;
+        const btn = document.getElementById("sortDirection");
+        btn.textContent = sortAscending ? "↓" : "↑";
+        applySort();
+    }
+
+    function openRandomRecord() {
+        // Use filteredRecords if available, otherwise use allRecords
+        const recordsToChooseFrom = filteredRecords.length > 0 ? filteredRecords : allRecords;
+        
+        if (recordsToChooseFrom.length === 0) {
+            return; // No records available
+        }
+        
+        // Pick a random record
+        const randomIndex = Math.floor(Math.random() * recordsToChooseFrom.length);
+        const randomRecord = recordsToChooseFrom[randomIndex];
+        
+        // Open the modal for the random record
+        openModal(randomRecord);
+    }
+
+    let scrollPosition = 0;
+
+    let currentRecordId = null;
+
+    function openModal(record) {
+        const modal = document.getElementById("trackModal");
+        if (modal.classList.contains("show")) return;
+
+        // Store current record ID for play count updates
+        currentRecordId = record.id;
+
+        // Populate modal content first
+        document.getElementById("modalImage").src = record.thumb;
+        document.getElementById("modalTitle").textContent = record.title;
+        document.getElementById("modalArtist").textContent = record.artist;
+        document.getElementById("modalYear").textContent = record.year || "Unknown";
+        document.getElementById("playCount").textContent = record.play_count || 0;
+        
+        // Update undo button visibility
+        const undoBtn = document.getElementById("undoPlayBtn");
+        undoBtn.style.display = (record.play_count > 0) ? "block" : "none";
+        
+        const trackList = document.getElementById("trackList");
+        trackList.innerHTML = "";
+        
+        if (record.tracks && record.tracks.length > 0) {
+            record.tracks.forEach(track => {
+                const li = document.createElement("li");
+                li.textContent = track;
+                trackList.appendChild(li);
+            });
+        } else {
+            trackList.innerHTML = "<li>No track information available</li>";
+        }
+        
+        // Lock body scroll before showing modal
+        scrollPosition = window.scrollY || window.pageYOffset;
+        document.body.classList.add("modal-open");
+        
+        // Show modal
+        modal.classList.add("show");
+    }
+
+    function incrementPlayCount() {
+        if (!currentRecordId) return;
+        
+        fetch("/api/play_count", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                release_id: currentRecordId,
+                delta: 1
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const playCountEl = document.getElementById("playCount");
+            playCountEl.textContent = data.play_count;
+            
+            // Show undo button
+            document.getElementById("undoPlayBtn").style.display = "block";
+            
+            // Update the record in allRecords array
+            const record = allRecords.find(r => r.id === currentRecordId);
+            if (record) {
+                record.play_count = data.play_count;
+            }
+            
+            // Re-apply sorting if sorting by play count
+            const sortBy = document.getElementById("sortSelect").value;
+            if (sortBy === "play_count") {
+                applySort();
+            }
+        })
+        .catch(error => {
+            console.error("Error updating play count:", error);
+        });
+    }
+
+    function decrementPlayCount() {
+        if (!currentRecordId) return;
+        
+        fetch("/api/play_count", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                release_id: currentRecordId,
+                delta: -1
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const playCountEl = document.getElementById("playCount");
+            playCountEl.textContent = data.play_count;
+            
+            // Hide undo button if count is 0
+            const undoBtn = document.getElementById("undoPlayBtn");
+            undoBtn.style.display = (data.play_count > 0) ? "block" : "none";
+            
+            // Update the record in allRecords array
+            const record = allRecords.find(r => r.id === currentRecordId);
+            if (record) {
+                record.play_count = data.play_count;
+            }
+            
+            // Re-apply sorting if sorting by play count
+            const sortBy = document.getElementById("sortSelect").value;
+            if (sortBy === "play_count") {
+                applySort();
+            }
+        })
+        .catch(error => {
+            console.error("Error updating play count:", error);
+        });
+    }
+
+    function closeModal() {
+        const modal = document.getElementById("trackModal");
+        modal.classList.remove("show");
+        
+        // Restore body scroll
+        document.body.classList.remove("modal-open");
+        window.scrollTo(0, scrollPosition);
+        scrollPosition = 0;
+    }
+
+    document.getElementById("trackModal").addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) {
+            closeModal();
+        }
+    });
+
+    document.addEventListener("DOMContentLoaded", render);
+</script>
+
+</body>
+</html>
