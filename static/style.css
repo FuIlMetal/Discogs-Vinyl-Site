@@ -38,6 +38,64 @@ body.modal-open {
     margin-bottom: 24px;
 }
 
+.now-playing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.85rem;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.now-playing.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.now-playing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.7);
+}
+
+.now-playing-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.now-playing-text {
+    font-weight: 500;
+}
+
+.now-playing-clear {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+    border-radius: 999px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.now-playing-clear:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+}
+
 h1 {
     text-align: center;
     margin: 0;
@@ -91,7 +149,7 @@ h1 {
 #genreFilter {
     padding: 14px 18px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: #fff;
@@ -176,7 +234,7 @@ h1 {
 
 /* Cards */
 .record-card {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.035);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
@@ -186,6 +244,11 @@ h1 {
     display: flex;
     flex-direction: column;
     min-width: 0;
+}
+
+.record-card.current-record {
+    border-color: rgba(74, 222, 128, 0.7);
+    box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35);
 }
 
 .record-card:hover {
@@ -249,6 +312,7 @@ h1 {
 }
 
 .modal {
+    --modal-bg-image: none;
     position: fixed;
     top: 0;
     left: 0;
@@ -269,18 +333,44 @@ h1 {
     touch-action: none;
 }
 
+.modal::before,
+.modal::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.modal::before {
+    background-image: var(--modal-bg-image);
+    background-position: center;
+    background-size: cover;
+    filter: blur(50px) saturate(1.2);
+    transform: scale(1.1);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.modal::after {
+    background: linear-gradient(180deg, rgba(5, 5, 12, 0.35), rgba(5, 5, 12, 0.55));
+}
+
+.modal.has-cover::before {
+    opacity: 0.95;
+}
+
 .modal.show {
     opacity: 1;
     pointer-events: auto;
 }
 
 .modal-content {
-    background: rgba(26, 26, 46, 0.95);
+    background: rgba(12, 12, 24, 0.68);
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 24px;
     width: 100%;
-    max-width: 600px;
+    max-width: 700px;
     max-height: 85vh;
     overflow: hidden;
     display: flex;
@@ -289,6 +379,8 @@ h1 {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     box-sizing: border-box;
     margin: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 @keyframes fadeInScale {
@@ -334,15 +426,15 @@ h1 {
 .modal-header {
     display: flex;
     gap: 16px;
-    padding: 24px;
+    padding: 20px 24px;
     padding-right: 64px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
 }
 
 .modal-header img {
-    width: 80px;
-    height: 80px;
+    width: 100px;
+    height: 100px;
     border-radius: 12px;
     object-fit: cover;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -352,21 +444,23 @@ h1 {
 .modal-header-info {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    justify-content: center;
+    gap: 8px;
     flex: 1;
     min-width: 0;
 }
 
 .modal-header h2 {
-    font-size: 1.3rem;
-    margin-bottom: 6px;
+    font-size: 1.5rem;
+    margin: 0;
     color: #fff;
+    font-weight: 600;
 }
 
 .modal-header p {
-    font-size: 0.95rem;
+    font-size: 1rem;
     color: rgba(255, 255, 255, 0.7);
-    margin-bottom: 4px;
+    margin: 0;
 }
 
 .play-count-section {
@@ -412,6 +506,22 @@ h1 {
     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
+.play-btn.ghost {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.85);
+    box-shadow: none;
+}
+
+.play-btn.ghost:hover {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+}
+
+.play-btn.ghost:focus {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
+}
+
 .play-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
@@ -454,7 +564,7 @@ h1 {
 }
 
 .modal-body {
-    padding: 24px;
+    padding: 0;
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1;
@@ -462,45 +572,177 @@ h1 {
     overscroll-behavior: contain;
 }
 
-.modal-body h3 {
-    font-size: 1.1rem;
-    margin-bottom: 16px;
-    color: rgba(102, 126, 234, 1);
+/* Release Information Section */
+.release-info-section {
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.section-title {
+    font-size: 1.1rem;
+    margin: 0 0 16px 0;
+    color: rgba(102, 126, 234, 1);
+    font-weight: 600;
+}
 
-#trackList {
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.info-label {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+}
+
+.info-value {
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Tracklist Section */
+.tracklist-section {
+    padding: 20px 24px;
+}
+
+.tracklist-header {
+    margin-bottom: 16px;
+}
+
+.track-list {
     list-style: none;
     counter-reset: track-counter;
     padding: 0;
+    margin: 0;
 }
 
-#trackList li {
-    counter-increment: track-counter;
-    padding: 12px 16px;
-    margin-bottom: 8px;
+
+.track-list li {
+    padding: 14px 16px;
+    margin-bottom: 6px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    position: relative;
-    padding-left: 48px;
     transition: all 0.2s ease;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.9);
 }
 
-#trackList li:hover {
+.track-list li:hover {
     background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(102, 126, 234, 0.3);
+    border-color: rgba(102, 126, 234, 0.4);
+    transform: translateX(4px);
 }
 
-#trackList li::before {
-    content: counter(track-counter);
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: rgba(102, 126, 234, 0.8);
-    font-weight: 600;
-    font-size: 0.9rem;
+.track-list li:active {
+    transform: translateX(2px) scale(0.98);
+}
+
+.track-list li:last-child {
+    margin-bottom: 0;
+}
+
+/* Lyrics Modal Styles */
+.lyrics-modal-content {
+    max-width: 720px;
+}
+
+.lyrics-modal-content .modal-header {
+    padding-right: 64px;
+}
+
+.lyrics-modal-content .modal-header-info {
+    width: 100%;
+}
+
+.lyrics-content {
+    background: rgba(26, 26, 46, 0.75);
+    padding: 28px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    min-height: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: pre-wrap;
+    font-family: "Times New Roman", Georgia, serif;
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.25);
+    text-align: center;
+}
+
+.lyrics-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.lyrics-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+}
+
+.lyrics-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+.lyrics-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.loading-spinner {
+    text-align: center;
+    padding: 40px 20px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+}
+
+.loading-spinner::after {
+    content: "...";
+    animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+    0%, 20% {
+        content: ".";
+    }
+    40% {
+        content: "..";
+    }
+    60%, 100% {
+        content: "...";
+    }
+}
+
+.lyrics-text {
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 1rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    padding: 20px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    text-align: center;
+}
+
+.lyrics-text br {
+    line-height: 1.8;
+}
+
+.lyrics-error {
+    text-align: center;
+    padding: 40px 20px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 1rem;
 }
 
 /* Tablet adjustments */
@@ -542,30 +784,42 @@ h1 {
     }
     
     .modal-header {
-        padding: 20px;
+        padding: 16px 20px;
         padding-right: 56px;
-        flex-direction: column;
     }
     
     .modal-header img {
-        width: 60px;
-        height: 60px;
+        width: 80px;
+        height: 80px;
     }
     
     .modal-header-info {
-        gap: 12px;
+        gap: 6px;
     }
     
-    .play-count-section {
-        width: 100%;
+    .modal-header h2 {
+        font-size: 1.3rem;
     }
     
-    .play-count-buttons {
-        width: 100%;
+    .modal-header p {
+        font-size: 0.9rem;
     }
     
-    .play-btn {
-        flex: 1;
+    .release-info-section,
+    .tracklist-section {
+        padding: 16px 20px;
+    }
+    
+    .info-grid {
+        gap: 10px;
+    }
+    
+    .info-label {
+        font-size: 0.8rem;
+    }
+    
+    .info-value {
+        font-size: 0.9rem;
     }
 }
 
