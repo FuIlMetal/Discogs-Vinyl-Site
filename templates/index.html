@@ -10,6 +10,14 @@
   <div class="container">
     <div class="header-section">
       <h1>🎵 Vinyl Collection</h1>
+      <div id="nowPlaying" class="now-playing" aria-live="polite">
+        <span class="now-playing-dot"></span>
+        <span class="now-playing-label">Now spinning:</span>
+        <span id="nowPlayingText" class="now-playing-text">Nothing right now</span>
+        <button id="clearNowPlayingBtn" class="now-playing-clear" onclick="clearNowPlaying()" aria-label="Clear now playing">
+          ✕
+        </button>
+      </div>
       <button id="randomRecordBtn" class="random-btn" onclick="openRandomRecord()" aria-label="Open random record">
         🎲 Random Record
       </button>
@@ -42,41 +50,113 @@
         <div class="modal-header">
             <img id="modalImage" src="" alt="">
             <div class="modal-header-info">
-                <div>
-                    <h2 id="modalTitle"></h2>
-                    <p id="modalArtist"></p>
-                    <p id="modalYear"></p>
-                </div>
-                <div class="play-count-section">
-                    <div class="play-count-display">
-                        <span class="play-count-label">Plays:</span>
-                        <span id="playCount">0</span>
-                    </div>
-                    <div class="play-count-buttons">
-                        <button id="playRecordBtn" class="play-btn" onclick="incrementPlayCount()" aria-label="Mark as played">
-                            ▶ Play Record
-                        </button>
-                        <button id="undoPlayBtn" class="undo-btn" onclick="decrementPlayCount()" aria-label="Undo play">
-                            ↶
-                        </button>
-                    </div>
-                </div>
+                <h2 id="modalTitle"></h2>
+                <p id="modalArtist"></p>
             </div>
         </div>
         <div class="modal-body">
-            <h3>Track List</h3>
-            <ol id="trackList"></ol>
+            <!-- Release Information Section -->
+            <div class="release-info-section">
+                <h3 class="section-title">Release Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Release / Master year:</span>
+                        <span class="info-value" id="modalYear">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Genres:</span>
+                        <span class="info-value" id="modalGenres">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Styles:</span>
+                        <span class="info-value" id="modalStyles">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Format:</span>
+                        <span class="info-value" id="modalFormat">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Format Desc.:</span>
+                        <span class="info-value" id="modalFormatDesc">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Labels:</span>
+                        <span class="info-value" id="modalLabels">-</span>
+                    </div>
+                </div>
+                <div class="play-count-section">
+                    <div class="play-count-display">
+                        <span class="play-count-label">Play count:</span>
+                        <span id="playCount">0</span>
+                    </div>
+                    <div class="play-count-buttons">
+                        <button class="play-btn" onclick="decrementPlayCount()" aria-label="Decrease play count">−</button>
+                        <button class="play-btn" onclick="incrementPlayCount()" aria-label="Increase play count">I SPUN IT</button>
+                        <button class="play-btn ghost" id="undoPlayBtn" onclick="decrementPlayCount()" style="display: none;">Undo</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tracklist Section -->
+            <div class="tracklist-section">
+                <div class="tracklist-header">
+                    <h3 class="section-title">Tracklist</h3>
+                </div>
+                <ol id="trackList" class="track-list"></ol>
+            </div>
         </div>
     </div>
 </div>
 
-<script>
-    /* Sample data for demonstration */
-    const allRecords = JSON.parse('{{ collection | tojson | safe }}');
-    
-    let filteredRecords = [...allRecords];
-    let sortAscending = true;
+<!-- Modal for lyrics -->
+<div id="lyricsModal" class="modal" onclick="closeLyricsModal(event)">
+    <div class="modal-content lyrics-modal-content" onclick="event.stopPropagation()">
+        <button class="close-btn" onclick="closeLyricsModal()">&times;</button>
+        <div class="modal-header">
+            <div class="modal-header-info">
+                <h2 id="lyricsTrackTitle"></h2>
+                <p id="lyricsArtist"></p>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div id="lyricsContent" class="lyrics-content">
+                <div class="loading-spinner">Loading lyrics...</div>
+            </div>
+        </div>
+    </div>
+</div>
 
+<script id="collection-data" type="application/json">
+    {{ collection | tojson }}
+</script>
+
+<script>
+    /* Collection data */
+    let allRecords = [];
+    let filteredRecords = [];
+    let sortAscending = true;
+    // Track the record that is currently spinning (for UI/LED mapping)
+    let nowPlayingRecordId = null;
+
+    try {
+        const collectionDataElement = document.getElementById("collection-data");
+        const collectionDataJson = collectionDataElement ? collectionDataElement.textContent : "[]";
+        const collectionData = JSON.parse(collectionDataJson);
+        allRecords = collectionData;
+        filteredRecords = [...allRecords];
+        console.log(`Loaded ${allRecords.length} records`);
+
+        // Initialize now playing from server-provided flag
+        const current = allRecords.find(r => r.is_current);
+        if (current) {
+            nowPlayingRecordId = current.id;
+        }
+        updateNowPlayingBanner();
+    } catch (error) {
+        console.error('Error parsing collection data:', error);
+        allRecords = [];
+        filteredRecords = [];
+    }
 
     function render() {
         const list = document.getElementById("record-list");
@@ -91,6 +171,9 @@
         filteredRecords.forEach(item => {
             const div = document.createElement("div");
             div.className = "record-card";
+            if (nowPlayingRecordId && item.id === nowPlayingRecordId) {
+                div.classList.add("current-record");
+            }
             div.onclick = () => openModal(item);
             div.innerHTML = `
                 <img src="${item.thumb}" alt="${item.title}">
@@ -180,6 +263,7 @@
 
     let scrollPosition = 0;
 
+    // Tracks which record is open in the modal for play count updates
     let currentRecordId = null;
 
     function openModal(record) {
@@ -190,23 +274,60 @@
         currentRecordId = record.id;
 
         // Populate modal content first
-        document.getElementById("modalImage").src = record.thumb;
+        const coverImage = record.cover_image || record.thumb || "";
+        const modalImageEl = document.getElementById("modalImage");
+        if (coverImage) {
+            modalImageEl.src = coverImage;
+            modalImageEl.alt = record.title;
+            const sanitizedCoverImage = coverImage.replace(/"/g, '\\"');
+            modal.style.setProperty("--modal-bg-image", `url("${sanitizedCoverImage}")`);
+            modal.classList.add("has-cover");
+        } else {
+            modalImageEl.removeAttribute("src");
+            modalImageEl.alt = "";
+            modal.style.removeProperty("--modal-bg-image");
+            modal.classList.remove("has-cover");
+        }
         document.getElementById("modalTitle").textContent = record.title;
         document.getElementById("modalArtist").textContent = record.artist;
-        document.getElementById("modalYear").textContent = record.year || "Unknown";
-        document.getElementById("playCount").textContent = record.play_count || 0;
         
-        // Update undo button visibility
+        // Populate release information
+        const year = record.year || "Unknown";
+        document.getElementById("modalYear").textContent = `${year} / ${year}`;
+        document.getElementById("modalGenres").textContent = (record.genres && record.genres.length > 0) ? record.genres.join(", ") : "-";
+        document.getElementById("modalStyles").textContent = (record.styles && record.styles.length > 0) ? record.styles.join(", ") : "-";
+        document.getElementById("modalFormat").textContent = record.format || "-";
+        document.getElementById("modalFormatDesc").textContent = record.format_desc || "-";
+        document.getElementById("modalLabels").textContent = (record.labels && record.labels.length > 0) ? record.labels.join(", ") : "-";
+        const playCountValue = typeof record.play_count === "number" ? record.play_count : 0;
+        const playCountEl = document.getElementById("playCount");
+        if (playCountEl) {
+            playCountEl.textContent = playCountValue;
+        }
         const undoBtn = document.getElementById("undoPlayBtn");
-        undoBtn.style.display = (record.play_count > 0) ? "block" : "none";
+        if (undoBtn) {
+            undoBtn.style.display = playCountValue > 0 ? "block" : "none";
+        }
         
         const trackList = document.getElementById("trackList");
         trackList.innerHTML = "";
         
         if (record.tracks && record.tracks.length > 0) {
-            record.tracks.forEach(track => {
+            record.tracks.forEach((track, index) => {
                 const li = document.createElement("li");
-                li.textContent = track;
+                // Format track number (A1, A2, B1, etc.)
+                // Split tracks roughly in half for A and B sides
+                const midPoint = Math.ceil(record.tracks.length / 2);
+                const side = index < midPoint ? "A" : "B";
+                const trackNum = index < midPoint ? index + 1 : index - midPoint + 1;
+                const trackLabel = `${side}${trackNum} - ${track}`;
+                
+                li.textContent = trackLabel;
+                li.style.cursor = "pointer";
+                li.onclick = (e) => {
+                    e.stopPropagation();
+                    openLyricsModal(record.artist, track);
+                };
                 trackList.appendChild(li);
             });
         } else {
@@ -246,6 +367,15 @@
             const record = allRecords.find(r => r.id === currentRecordId);
             if (record) {
                 record.play_count = data.play_count;
+            }
+
+            // Update now playing from server response
+            if (data.current_record_id) {
+                nowPlayingRecordId = data.current_record_id;
+                updateNowPlayingBanner();
+            } else {
+                // Re-render so current indicator updates
+                render();
             }
             
             // Re-apply sorting if sorting by play count
@@ -292,15 +422,64 @@
             if (sortBy === "play_count") {
                 applySort();
             }
+            else {
+                render();
+            }
         })
         .catch(error => {
             console.error("Error updating play count:", error);
         });
     }
 
+    function updateNowPlayingBanner() {
+        const banner = document.getElementById("nowPlaying");
+        const textEl = document.getElementById("nowPlayingText");
+        if (!banner || !textEl) return;
+
+        if (!nowPlayingRecordId) {
+            banner.classList.remove("visible");
+            textEl.textContent = "Nothing right now";
+            render();
+            return;
+        }
+
+        const record = allRecords.find(r => r.id === nowPlayingRecordId);
+        if (!record) {
+            banner.classList.remove("visible");
+            textEl.textContent = "Nothing right now";
+            render();
+            return;
+        }
+
+        textEl.textContent = `${record.artist} — ${record.title}`;
+        banner.classList.add("visible");
+        // Re-render so the current card is subtly highlighted
+        render();
+    }
+
+    function clearNowPlaying() {
+        fetch("/api/now_playing/clear", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // We intentionally keep last_played for LEDs; here we just clear UI
+            nowPlayingRecordId = null;
+            updateNowPlayingBanner();
+        })
+        .catch(error => {
+            console.error("Error clearing now playing:", error);
+        });
+    }
+
     function closeModal() {
         const modal = document.getElementById("trackModal");
         modal.classList.remove("show");
+        modal.style.removeProperty("--modal-bg-image");
+        modal.classList.remove("has-cover");
         
         // Restore body scroll
         document.body.classList.remove("modal-open");
@@ -311,6 +490,64 @@
     document.getElementById("trackModal").addEventListener("click", (e) => {
         if (e.target === e.currentTarget) {
             closeModal();
+        }
+    });
+
+    function openLyricsModal(artist, trackName) {
+        const modal = document.getElementById("lyricsModal");
+        if (modal.classList.contains("show")) return;
+
+        // Set track info
+        document.getElementById("lyricsTrackTitle").textContent = trackName;
+        document.getElementById("lyricsArtist").textContent = artist;
+        
+        // Show loading state
+        const lyricsContent = document.getElementById("lyricsContent");
+        lyricsContent.innerHTML = '<div class="loading-spinner">Loading lyrics...</div>';
+        
+        // Lock body scroll
+        scrollPosition = window.scrollY || window.pageYOffset;
+        document.body.classList.add("modal-open");
+        
+        // Show modal
+        modal.classList.add("show");
+        
+        // Fetch lyrics
+        fetch(`/api/lyrics?artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(trackName)}`)
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error("Lyrics not found");
+                    }
+                    throw new Error("Failed to fetch lyrics");
+                }
+                return response.json();
+            })
+            .then(data => {
+                lyricsContent.innerHTML = `<div class="lyrics-text">${data.lyrics.replace(/\n/g, '<br>')}</div>`;
+            })
+            .catch(error => {
+                console.error("Error fetching lyrics:", error);
+                lyricsContent.innerHTML = `<div class="lyrics-error">${error.message || "Unable to load lyrics. Please try again later."}</div>`;
+            });
+    }
+
+    function closeLyricsModal(event) {
+        if (event && event.target && event.target !== event.currentTarget) {
+            return;
+        }
+        const modal = document.getElementById("lyricsModal");
+        modal.classList.remove("show");
+        
+        // Restore body scroll
+        document.body.classList.remove("modal-open");
+        window.scrollTo(0, scrollPosition);
+        scrollPosition = 0;
+    }
+
+    document.getElementById("lyricsModal").addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) {
+            closeLyricsModal();
         }
     });
 

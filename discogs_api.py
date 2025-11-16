@@ -66,9 +66,127 @@ def init_db():
             play_count INTEGER NOT NULL DEFAULT 0
         )
     """)
+
+    # Track the most recently spun record (logical "last played")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS current_record (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            release_id INTEGER,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+
+    # Track what is currently spinning (separate from last played)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS now_playing (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            release_id INTEGER,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+
+    # Track the most recently spun record (single-row table)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS current_record (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            release_id INTEGER,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lyrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artist TEXT NOT NULL,
+            track_name TEXT NOT NULL,
+            lyrics TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            UNIQUE(artist, track_name)
+        )
+    """)
     
     conn.commit()
     conn.close()
+
+
+def set_current_record(release_id: int):
+    """
+    Set the most recently spun record AND mark it as currently spinning.
+
+    - current_record.release_id = last played (persists even after stopped)
+    - now_playing.release_id   = currently spinning (cleared when user stops)
+    """
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO current_record (id, release_id, updated_at)
+        VALUES (1, ?, ?)
+        """,
+        (release_id, int(time.time())),
+    )
+
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO now_playing (id, release_id, updated_at)
+        VALUES (1, ?, ?)
+        """,
+        (release_id, int(time.time())),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_current_record():
+    """
+    Get the record that is currently spinning, or None.
+
+    This reads from the now_playing table.
+    """
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT release_id FROM now_playing WHERE id = 1"
+    )
+    row = cursor.fetchone()
+
+    conn.close()
+    return row[0] if row else None
+
+
+def clear_now_playing():
+    """Clear the 'currently spinning' record but keep last played."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE now_playing SET release_id = NULL, updated_at = ? WHERE id = 1",
+        (int(time.time()),),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_last_played():
+    """Return the last played record id (current_record), or None."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT release_id FROM current_record WHERE id = 1"
+    )
+    row = cursor.fetchone()
+
+    conn.close()
+    return row[0] if row else None
 
 def get_cached_release(release_id: int):
     """Get release data from cache"""
