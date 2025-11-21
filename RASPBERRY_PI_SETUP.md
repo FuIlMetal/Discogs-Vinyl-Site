@@ -41,7 +41,7 @@ FLASK_PORT=8080
 FLASK_DEBUG=False
 ```
 
-**Note:** The default port is now 8080 (instead of 80) to avoid permission issues. If you want to use port 80, see the "Using Port 80" section below.
+**Important:** Flask will run on port 8080 internally. We'll use nginx on port 80 to forward requests (see Step 5). This is necessary for DNS routing since DNS doesn't include port numbers.
 
 ## Step 3: Test the Application
 
@@ -96,9 +96,11 @@ sudo systemctl status discogs-vinyl-site.service
 sudo journalctl -u discogs-vinyl-site.service -f
 ```
 
-## Step 5: Using Port 80 (Optional)
+**Note:** After setting up nginx in Step 5, your Flask app will be accessible on port 80 through the nginx reverse proxy, which is required for DNS routing.
 
-If you want to access the site on port 80 (standard HTTP port), you have two options:
+## Step 5: Set Up Nginx Reverse Proxy (Required for DNS Routing)
+
+**Why nginx?** DNS doesn't include port numbers - it always routes to port 80 (HTTP) or 443 (HTTPS). Since Flask runs on port 8080 to avoid permission issues, we use nginx on port 80 to forward requests to Flask. This is the standard, secure approach.
 
 ### Option A: Use Nginx as Reverse Proxy (Recommended)
 
@@ -109,40 +111,54 @@ sudo apt update
 sudo apt install nginx
 ```
 
-2. **Create nginx configuration:**
+2. **Copy the nginx configuration file:**
+
+```bash
+# Copy the provided config file
+sudo cp nginx-discogs-vinyl-site.conf /etc/nginx/sites-available/discogs-vinyl-site
+```
+
+3. **Edit the configuration if needed:**
 
 ```bash
 sudo nano /etc/nginx/sites-available/discogs-vinyl-site
 ```
 
-Add this configuration:
-
+If you have a specific domain name, update the `server_name` line:
 ```nginx
-server {
-    listen 80;
-    server_name your-pi-hostname.local;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+server_name your-domain.com;  # Replace with your actual domain
 ```
 
-3. **Enable the site:**
+If you're using a dynamic DNS or just want to accept all requests, leave it as `server_name _;`
+
+4. **Enable the site and test:**
 
 ```bash
+# Create symlink to enable the site
 sudo ln -s /etc/nginx/sites-available/discogs-vinyl-site /etc/nginx/sites-enabled/
-sudo nginx -t  # Test configuration
+
+# Remove default nginx site if it exists (optional)
+sudo rm /etc/nginx/sites-enabled/default
+
+# Test the nginx configuration
+sudo nginx -t
+
+# If test passes, restart nginx
 sudo systemctl restart nginx
+
+# Enable nginx to start on boot
+sudo systemctl enable nginx
 ```
 
-### Option B: Allow Python to Bind to Port 80 (Less Secure)
+5. **Verify it's working:**
 
-If you want Flask to run directly on port 80, you can use `setcap`:
+- Check nginx status: `sudo systemctl status nginx`
+- Visit your domain or Pi's IP address (without port number) - it should work!
+- Check nginx logs if needed: `sudo tail -f /var/log/nginx/error.log`
+
+**Alternative: Direct Port 80 Binding (Not Recommended)**
+
+If you prefer Flask to run directly on port 80 (not recommended for security), you can use `setcap`:
 
 ```bash
 # Install libcap2-bin if not already installed
@@ -155,7 +171,7 @@ sudo setcap 'cap_net_bind_service=+ep' /home/pi/Discogs-Vinyl-Site/venv/bin/pyth
 # FLASK_PORT=80
 ```
 
-**Note:** This requires updating the service file to use the full path to the Python executable, and you'll need to re-run `setcap` if you recreate the virtual environment.
+**Note:** You'll need to re-run `setcap` if you recreate the virtual environment, and you won't need nginx if you use this approach.
 
 ## Troubleshooting
 
@@ -175,8 +191,17 @@ sudo setcap 'cap_net_bind_service=+ep' /home/pi/Discogs-Vinyl-Site/venv/bin/pyth
 
 ### Port Already in Use
 
-- Check what's using the port: `sudo netstat -tulpn | grep :8080`
-- Change the port in your `.env` file if needed
+- Check what's using the port: `sudo netstat -tulpn | grep :8080` (for Flask) or `grep :80` (for nginx)
+- If port 80 is in use, check: `sudo systemctl status nginx` or `sudo netstat -tulpn | grep :80`
+- Change the port in your `.env` file if needed (and update nginx config accordingly)
+
+### Nginx Not Forwarding to Flask
+
+- Verify Flask is running: `sudo systemctl status discogs-vinyl-site.service`
+- Check nginx can reach Flask: `curl http://127.0.0.1:8080` (should return HTML)
+- Check nginx error logs: `sudo tail -f /var/log/nginx/error.log`
+- Verify nginx config: `sudo nginx -t`
+- Make sure the proxy_pass URL in nginx config matches your Flask port (8080)
 
 ### Database Permission Issues
 
