@@ -23,12 +23,16 @@ This is my custom website to be hosted on a Raspberry Pi that hits Discogs
 
 The `.env` file is excluded from git, so your credentials won't be committed to the repository.
 
-## Raspberry Pi Setup
+## Raspberry Pi Setup (DNS Routing)
 
-For detailed instructions on setting up this application as a systemd service on Raspberry Pi, see **[RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md)**.
+**For DNS routing:** Since DNS doesn't include port numbers, you need nginx on port 80 to forward to Flask on port 8080.
 
-The setup guide includes:
-- Service configuration for automatic startup
-- Port configuration (defaults to 8080 to avoid permission issues)
-- Optional nginx reverse proxy setup for port 80
-- Troubleshooting tips
+See **[RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md)** for complete setup instructions, including:
+- Systemd service configuration
+- **Nginx reverse proxy setup (required for DNS)**
+- Troubleshooting
+
+**Quick nginx setup:** After setting up the Flask service, run:
+```bash
+chmod +x setup-nginx.sh && ./setup-nginx.sh
+```
