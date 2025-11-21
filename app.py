@@ -166,4 +166,7 @@ def get_lyrics_api():
     return jsonify({"lyrics": lyrics})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80, debug=True)
+    # Allow port to be configured via environment variable (default to 8080 for non-root)
+    port = int(os.getenv("FLASK_PORT", 8080))
+    debug = os.getenv("FLASK_DEBUG", "False").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug)
