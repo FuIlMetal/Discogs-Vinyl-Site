@@ -1,0 +1,20 @@
+[Unit]
+Description=Discogs Vinyl Collection Website
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Discogs-Vinyl-Site
+Environment="PATH=/home/pi/Discogs-Vinyl-Site/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/pi/Discogs-Vinyl-Site/venv/bin/python /home/pi/Discogs-Vinyl-Site/app.py
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
