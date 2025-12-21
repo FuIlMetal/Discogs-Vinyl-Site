@@ -23,21 +23,26 @@ def init_led_strip():
     """Initialize the LED strip. Returns True if successful."""
     global strip
     if not WS281X_AVAILABLE:
+        print("DEBUG: rpi-ws281x library not available")
         return False
     try:
         # Only initialize on Raspberry Pi
         if os.path.exists('/proc/device-tree/model'):
+            print(f"DEBUG: Initializing LED strip - {LED_COUNT} LEDs on GPIO {LED_PIN}")
             strip = PixelStrip(
                 LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, 
                 LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL
             )
             strip.begin()
+            print(f"DEBUG: LED strip initialized successfully with {strip.numPixels()} pixels")
             return True
         else:
-            print("Not running on Raspberry Pi - LED strip disabled")
+            print("DEBUG: Not running on Raspberry Pi - LED strip disabled")
             return False
     except Exception as e:
-        print(f"Error initializing LED strip: {e}")
+        print(f"DEBUG: Error initializing LED strip: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def set_all_leds(brightness_percent=30):
@@ -47,14 +52,20 @@ def set_all_leds(brightness_percent=30):
     """
     global strip
     
+    print(f"DEBUG: set_all_leds called with {brightness_percent}% brightness")
+    
     if strip is None:
+        print("DEBUG: Strip not initialized, attempting initialization...")
         if not init_led_strip():
+            print("DEBUG: Failed to initialize LED strip")
             return False
     
     try:
         # Convert percentage to 0-255 range
         brightness = int((brightness_percent / 100.0) * 255)
         brightness = max(0, min(255, brightness))  # Clamp to valid range
+        
+        print(f"DEBUG: Setting {strip.numPixels()} LEDs to brightness value {brightness} ({(brightness/255)*100:.1f}%)")
         
         # Set all pixels to white at specified brightness
         color = Color(brightness, brightness, brightness)
@@ -63,9 +74,12 @@ def set_all_leds(brightness_percent=30):
             strip.setPixelColor(i, color)
         
         strip.show()
+        print("DEBUG: LEDs updated and shown successfully")
         return True
     except Exception as e:
-        print(f"Error setting LEDs: {e}")
+        print(f"DEBUG: Error setting LEDs: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def clear_leds():

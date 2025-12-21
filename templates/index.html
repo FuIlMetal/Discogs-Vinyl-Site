@@ -385,18 +385,26 @@
             }
             
             // Trigger LEDs at 30% brightness
+            console.log("Triggering LEDs...");
             fetch("/api/leds/test", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
                 }
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log("LED response status:", response.status);
+                return response.json();
+            })
             .then(ledData => {
-                console.log("LEDs triggered:", ledData);
+                if (ledData.status === "success") {
+                    console.log("✅ LEDs triggered successfully:", ledData);
+                } else {
+                    console.error("❌ LED Error:", ledData);
+                }
             })
             .catch(error => {
-                console.error("Error triggering LEDs:", error);
+                console.error("❌ Error triggering LEDs:", error);
             });
         })
         .catch(error => {
