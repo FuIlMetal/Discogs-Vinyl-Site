@@ -239,6 +239,40 @@ sudo systemctl restart nginx
   chmod 664 vinyl_collection.db
   ```
 
+## Step 6: LED Strip Setup (Optional)
+
+If you're using the WS2812B LED strip feature, see **[LED_SETUP.md](LED_SETUP.md)** for:
+- Hardware wiring instructions
+- GPIO permissions setup
+- Troubleshooting guide
+- Testing procedures
+
+## Step 7: Deployment After Code Updates
+
+After pulling new code from git, you can use the deployment script:
+
+```bash
+# Make script executable (first time only)
+chmod +x deploy.sh
+
+# Run deployment script
+./deploy.sh
+```
+
+This script will:
+- Update dependencies
+- Reload systemd
+- Restart the service
+- Show service status
+
+Or manually:
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl daemon-reload
+sudo systemctl restart discogs-vinyl-site.service
+```
+
 ## Useful Commands
 
 ```bash
@@ -257,7 +291,16 @@ sudo systemctl status discogs-vinyl-site.service
 # View live logs
 sudo journalctl -u discogs-vinyl-site.service -f
 
+# View last 50 log lines
+sudo journalctl -u discogs-vinyl-site.service -n 50
+
 # Disable service from starting on boot
 sudo systemctl disable discogs-vinyl-site.service
+
+# Test LED diagnostics (if using LED strip)
+curl http://localhost:8080/api/leds/diagnostics
+
+# Test LED trigger
+curl -X POST http://localhost:8080/api/leds/test
 ```
 
