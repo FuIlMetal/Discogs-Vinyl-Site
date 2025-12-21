@@ -119,15 +119,29 @@ def clear_leds():
     """Turn off all LEDs."""
     global strip
     
+    print("DEBUG: clear_leds called")
+    
     if strip is None:
-        return False
+        print("DEBUG: Strip not initialized, attempting initialization...")
+        if not init_led_strip():
+            print("DEBUG: Failed to initialize LED strip for clearing")
+            return False
     
     try:
-        for i in range(strip.numPixels()):
-            strip.setPixelColor(i, Color(0, 0, 0))
+        num_pixels = strip.numPixels()
+        print(f"DEBUG: Clearing {num_pixels} LEDs")
+        
+        # Set all pixels to black (off)
+        color = Color(0, 0, 0)
+        for i in range(num_pixels):
+            strip.setPixelColor(i, color)
+        
         strip.show()
+        print("DEBUG: LEDs cleared and shown successfully")
         return True
     except Exception as e:
-        print(f"Error clearing LEDs: {e}")
+        print(f"DEBUG: Error clearing LEDs: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
