@@ -401,6 +401,12 @@
                     console.log("✅ LEDs triggered successfully:", ledData);
                 } else {
                     console.error("❌ LED Error:", ledData);
+                    if (ledData.diagnostics) {
+                        console.error("Diagnostics:", ledData.diagnostics);
+                        if (ledData.diagnostics.error) {
+                            alert("LED Error: " + ledData.diagnostics.error + "\n\nCheck console for full details.");
+                        }
+                    }
                 }
             })
             .catch(error => {

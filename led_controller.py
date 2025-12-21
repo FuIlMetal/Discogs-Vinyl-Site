@@ -82,6 +82,39 @@ def set_all_leds(brightness_percent=30):
         traceback.print_exc()
         return False
 
+def get_led_diagnostics():
+    """Get diagnostic information about LED setup."""
+    diagnostics = {
+        "library_available": WS281X_AVAILABLE,
+        "is_raspberry_pi": os.path.exists('/proc/device-tree/model'),
+        "strip_initialized": strip is not None,
+        "config": {
+            "led_count": LED_COUNT,
+            "gpio_pin": LED_PIN,
+            "brightness": LED_BRIGHTNESS,
+            "dma_channel": LED_DMA,
+            "channel": LED_CHANNEL
+        }
+    }
+    
+    # Try to get more info
+    if not WS281X_AVAILABLE:
+        diagnostics["error"] = "rpi-ws281x library not installed. Run: pip install rpi-ws281x"
+    elif not diagnostics["is_raspberry_pi"]:
+        diagnostics["error"] = "Not running on Raspberry Pi"
+    elif strip is None:
+        diagnostics["error"] = "Strip not initialized - check service logs for initialization errors"
+        # Try to initialize to get the actual error
+        try:
+            if not init_led_strip():
+                diagnostics["init_error"] = "Initialization failed - check GPIO permissions and hardware connection"
+        except Exception as e:
+            diagnostics["init_error"] = f"Initialization exception: {str(e)}"
+    else:
+        diagnostics["num_pixels"] = strip.numPixels()
+    
+    return diagnostics
+
 def clear_leds():
     """Turn off all LEDs."""
     global strip

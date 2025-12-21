@@ -36,3 +36,24 @@ See **[RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md)** for complete setup instru
 ```bash
 chmod +x setup-nginx.sh && ./setup-nginx.sh
 ```
+
+## Deployment
+
+After pulling new code, use the deployment script:
+```bash
+chmod +x deploy.sh  # First time only
+./deploy.sh
+```
+
+This automatically:
+- Updates dependencies
+- Reloads systemd
+- Restarts the service
+- Shows status
+
+## LED Strip Setup
+
+If you're using the WS2812B LED strip feature, see **[LED_SETUP.md](LED_SETUP.md)** for:
+- Hardware wiring (GPIO 10 / Physical Pin 19)
+- Software setup and permissions
+- Troubleshooting guide
