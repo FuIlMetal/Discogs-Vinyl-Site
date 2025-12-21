@@ -11,7 +11,7 @@ from discogs_api import (
     get_last_played,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
-from led_controller import set_all_leds, init_led_strip, get_led_diagnostics
+from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, clear_leds
 
 # Load environment variables from .env file
 load_dotenv()
@@ -193,6 +193,24 @@ def test_leds():
             "message": str(e),
             "diagnostics": diagnostics
         }), 500
+
+@app.route("/api/leds/clear", methods=["POST"])
+def clear_leds_api():
+    """API endpoint to turn off all LEDs"""
+    try:
+        print("DEBUG: /api/leds/clear endpoint called")
+        success = clear_leds()
+        if success:
+            print("DEBUG: LEDs cleared successfully")
+            return jsonify({"status": "success", "message": "LEDs turned off"})
+        else:
+            print("DEBUG: Failed to clear LEDs - strip not initialized")
+            return jsonify({"status": "error", "message": "LED strip not initialized"}), 500
+    except Exception as e:
+        print(f"DEBUG: Exception in clear_leds_api: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/leds/diagnostics", methods=["GET"])
 def led_diagnostics():
