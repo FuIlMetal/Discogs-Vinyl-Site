@@ -170,12 +170,18 @@ def get_lyrics_api():
 def test_leds():
     """API endpoint to test LEDs - sets all LEDs to 30% brightness"""
     try:
+        print("DEBUG: /api/leds/test endpoint called")
         success = set_all_leds(brightness_percent=30)
         if success:
+            print("DEBUG: LED test successful")
             return jsonify({"status": "success", "message": "LEDs triggered"})
         else:
-            return jsonify({"status": "error", "message": "LED strip not available"}), 500
+            print("DEBUG: LED test failed - strip not available or initialization failed")
+            return jsonify({"status": "error", "message": "LED strip not available or initialization failed"}), 500
     except Exception as e:
+        print(f"DEBUG: Exception in test_leds: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
