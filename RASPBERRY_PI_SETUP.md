@@ -131,14 +131,20 @@ server_name your-domain.com;  # Replace with your actual domain
 
 If you're using a dynamic DNS or just want to accept all requests, leave it as `server_name _;`
 
-4. **Enable the site and test:**
+4. **Disable the default nginx site (REQUIRED):**
+
+```bash
+# Remove the default nginx site to avoid conflicts
+sudo rm /etc/nginx/sites-enabled/default
+```
+
+**Important:** If you skip this step, you'll get a "conflicting server name" error and see the nginx welcome page instead of your Flask app.
+
+5. **Enable the site and test:**
 
 ```bash
 # Create symlink to enable the site
 sudo ln -s /etc/nginx/sites-available/discogs-vinyl-site /etc/nginx/sites-enabled/
-
-# Remove default nginx site if it exists (optional)
-sudo rm /etc/nginx/sites-enabled/default
 
 # Test the nginx configuration
 sudo nginx -t
@@ -150,11 +156,12 @@ sudo systemctl restart nginx
 sudo systemctl enable nginx
 ```
 
-5. **Verify it's working:**
+6. **Verify it's working:**
 
 - Check nginx status: `sudo systemctl status nginx`
 - Visit your domain or Pi's IP address (without port number) - it should work!
 - Check nginx logs if needed: `sudo tail -f /var/log/nginx/error.log`
+- Verify Flask is running: `sudo systemctl status discogs-vinyl-site.service`
 
 **Alternative: Direct Port 80 Binding (Not Recommended)**
 
@@ -195,13 +202,35 @@ sudo setcap 'cap_net_bind_service=+ep' /home/pi/Discogs-Vinyl-Site/venv/bin/pyth
 - If port 80 is in use, check: `sudo systemctl status nginx` or `sudo netstat -tulpn | grep :80`
 - Change the port in your `.env` file if needed (and update nginx config accordingly)
 
-### Nginx Not Forwarding to Flask
+### Nginx Not Forwarding to Flask / Seeing "Welcome to nginx!" Page
 
+- **Most common issue:** Default nginx site is still enabled. Fix it:
+  ```bash
+  sudo rm /etc/nginx/sites-enabled/default
+  sudo nginx -t
+  sudo systemctl restart nginx
+  ```
 - Verify Flask is running: `sudo systemctl status discogs-vinyl-site.service`
 - Check nginx can reach Flask: `curl http://127.0.0.1:8080` (should return HTML)
 - Check nginx error logs: `sudo tail -f /var/log/nginx/error.log`
 - Verify nginx config: `sudo nginx -t`
 - Make sure the proxy_pass URL in nginx config matches your Flask port (8080)
+- List enabled sites: `ls -la /etc/nginx/sites-enabled/` (should only show discogs-vinyl-site)
+
+### "Conflicting server name" Warning
+
+This means multiple nginx configs are trying to use the same server name. Fix it:
+```bash
+# Remove default site
+sudo rm /etc/nginx/sites-enabled/default
+
+# Check for other conflicting configs
+ls -la /etc/nginx/sites-enabled/
+
+# Remove any other configs you don't need, then restart
+sudo nginx -t
+sudo systemctl restart nginx
+```
 
 ### Database Permission Issues
 

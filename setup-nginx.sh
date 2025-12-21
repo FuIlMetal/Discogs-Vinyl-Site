@@ -19,10 +19,20 @@ sudo cp nginx-discogs-vinyl-site.conf /etc/nginx/sites-available/discogs-vinyl-s
 echo "Enabling nginx site..."
 sudo ln -sf /etc/nginx/sites-available/discogs-vinyl-site /etc/nginx/sites-enabled/
 
-# Remove default site if it exists
-if [ -f /etc/nginx/sites-enabled/default ]; then
-    echo "Removing default nginx site..."
+# Remove default site if it exists (both symlink and any conflicting configs)
+echo "Disabling default nginx site..."
+if [ -L /etc/nginx/sites-enabled/default ]; then
     sudo rm /etc/nginx/sites-enabled/default
+    echo "  Removed default site symlink"
+fi
+if [ -f /etc/nginx/sites-enabled/default ]; then
+    sudo rm /etc/nginx/sites-enabled/default
+    echo "  Removed default site file"
+fi
+
+# Also check for any other conflicting configs
+if ls /etc/nginx/sites-enabled/*.conf 2>/dev/null | grep -v discogs-vinyl-site > /dev/null; then
+    echo "  Warning: Other nginx configs found. You may need to disable them manually."
 fi
 
 # Test nginx configuration
