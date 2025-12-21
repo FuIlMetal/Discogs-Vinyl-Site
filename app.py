@@ -11,6 +11,7 @@ from discogs_api import (
     get_last_played,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
+from led_controller import set_all_leds, init_led_strip
 
 # Load environment variables from .env file
 load_dotenv()
@@ -164,6 +165,18 @@ def get_lyrics_api():
         return jsonify({"error": "Lyrics not available"}), 404
     
     return jsonify({"lyrics": lyrics})
+
+@app.route("/api/leds/test", methods=["POST"])
+def test_leds():
+    """API endpoint to test LEDs - sets all LEDs to 30% brightness"""
+    try:
+        success = set_all_leds(brightness_percent=30)
+        if success:
+            return jsonify({"status": "success", "message": "LEDs triggered"})
+        else:
+            return jsonify({"status": "error", "message": "LED strip not available"}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     # Allow port to be configured via environment variable (default to 8080 for non-root)

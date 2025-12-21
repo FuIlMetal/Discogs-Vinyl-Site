@@ -91,7 +91,7 @@
                     </div>
                     <div class="play-count-buttons">
                         <button class="play-btn" onclick="decrementPlayCount()" aria-label="Decrease play count">−</button>
-                        <button class="play-btn" onclick="incrementPlayCount()" aria-label="Increase play count">I SPUN IT</button>
+                        <button class="play-btn" onclick="incrementPlayCount()" aria-label="Increase play count">Let's Play This</button>
                         <button class="play-btn ghost" id="undoPlayBtn" onclick="decrementPlayCount()" style="display: none;">Undo</button>
                     </div>
                 </div>
@@ -383,6 +383,21 @@
             if (sortBy === "play_count") {
                 applySort();
             }
+            
+            // Trigger LEDs at 30% brightness
+            fetch("/api/leds/test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            })
+            .then(response => response.json())
+            .then(ledData => {
+                console.log("LEDs triggered:", ledData);
+            })
+            .catch(error => {
+                console.error("Error triggering LEDs:", error);
+            });
         })
         .catch(error => {
             console.error("Error updating play count:", error);
