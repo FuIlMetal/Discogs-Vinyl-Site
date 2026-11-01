@@ -726,7 +726,13 @@
         .then(({ ok, data }) => {
             if (!ok) throw new Error(data.error);
             btn.textContent = "Added ✓";
-            collectionChanged = true;
+            if (data.record) {
+                allRecords.push(data.record);
+                applyFilters();
+            } else {
+                // Server couldn't look the record up yet, so reload on close instead
+                collectionChanged = true;
+            }
         })
         .catch(error => {
             console.error("Error adding record:", error);

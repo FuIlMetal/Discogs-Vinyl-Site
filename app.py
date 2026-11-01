@@ -15,6 +15,9 @@ from discogs_api import (
     get_plays_field_id,
     sync_play_counts_from_discogs,
     update_discogs_play_count,
+    get_release_instance,
+    get_release_tracks,
+    cache_release,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
 from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, clear_leds
@@ -30,6 +33,53 @@ DISCOGS_TOKEN = os.getenv("DISCOGS_TOKEN")
 # Validate that credentials are set
 if not DISCOGS_USERNAME or not DISCOGS_TOKEN:
     raise ValueError("DISCOGS_USERNAME and DISCOGS_TOKEN must be set in .env file")
+
+def format_record(r, play_counts, current_record_id):
+    """Turn a Discogs collection item into the record shape the page uses"""
+    basic = r.get("basic_information", {})
+    release_id = basic.get("id")
+    genres = basic.get("genres", []) or []
+    styles = basic.get("styles", []) or []
+    # Combine genres and styles
+    all_genre_tags = genres + styles
+    
+    # Get format information
+    try:
+        formats = basic.get("formats", [])
+        format_name = formats[0].get("name", "Unknown") if formats and len(formats) > 0 else "Unknown"
+        format_descriptions = formats[0].get("descriptions", []) if formats and len(formats) > 0 and isinstance(formats[0].get("descriptions"), list) else []
+        format_desc = ", ".join(format_descriptions) if format_descriptions else ""
+    except (IndexError, AttributeError, TypeError):
+        format_name = "Unknown"
+        format_desc = ""
+    
+    # Get labels
+    try:
+        labels = basic.get("labels", [])
+        label_names = [label.get("name", "") for label in labels if label and isinstance(label, dict) and label.get("name")]
+    except (TypeError, AttributeError):
+        label_names = []
+    
+    # Get master year (if available)
+    master_id = basic.get("master_id", None)
+    
+    return {
+        "title": basic.get("title", ""),
+        "artist": ", ".join([artist["name"] for artist in basic.get("artists", [])]),
+        "year": basic.get("year", "Unknown"),
+        "thumb": basic.get("thumb", ""),
+        "cover_image": basic.get("cover_image", ""),
+        "id": release_id,
+        "tracks": r.get("tracks", []),  # Now includes tracks!
+        "genres": all_genre_tags,  # Add genres to the collection
+        "play_count": play_counts.get(release_id, 0),  # Add play count
+        "format": format_name,
+        "format_desc": format_desc,
+        "labels": label_names,
+        "styles": styles,
+        "master_id": master_id,
+        "is_current": bool(current_record_id and release_id == current_record_id),
+    }
 
 @app.route("/", methods=["GET"])
 def index():
@@ -55,51 +105,9 @@ def index():
     all_genres = set()  # Collect all unique genres
     
     for r in releases:
-        basic = r.get("basic_information", {})
-        release_id = basic.get("id")
-        genres = basic.get("genres", []) or []
-        styles = basic.get("styles", []) or []
-        # Combine genres and styles
-        all_genre_tags = genres + styles
-        all_genres.update(all_genre_tags)
-        
-        # Get format information
-        try:
-            formats = basic.get("formats", [])
-            format_name = formats[0].get("name", "Unknown") if formats and len(formats) > 0 else "Unknown"
-            format_descriptions = formats[0].get("descriptions", []) if formats and len(formats) > 0 and isinstance(formats[0].get("descriptions"), list) else []
-            format_desc = ", ".join(format_descriptions) if format_descriptions else ""
-        except (IndexError, AttributeError, TypeError):
-            format_name = "Unknown"
-            format_desc = ""
-        
-        # Get labels
-        try:
-            labels = basic.get("labels", [])
-            label_names = [label.get("name", "") for label in labels if label and isinstance(label, dict) and label.get("name")]
-        except (TypeError, AttributeError):
-            label_names = []
-        
-        # Get master year (if available)
-        master_id = basic.get("master_id", None)
-        
-        collection.append({
-            "title": basic.get("title", ""),
-            "artist": ", ".join([artist["name"] for artist in basic.get("artists", [])]),
-            "year": basic.get("year", "Unknown"),
-            "thumb": basic.get("thumb", ""),
-            "cover_image": basic.get("cover_image", ""),
-            "id": release_id,
-            "tracks": r.get("tracks", []),  # Now includes tracks!
-            "genres": all_genre_tags,  # Add genres to the collection
-            "play_count": play_counts.get(release_id, 0),  # Add play count
-            "format": format_name,
-            "format_desc": format_desc,
-            "labels": label_names,
-            "styles": styles,
-            "master_id": master_id,
-            "is_current": bool(current_record_id and release_id == current_record_id),
-        })
+        record = format_record(r, play_counts, current_record_id)
+        all_genres.update(record["genres"])
+        collection.append(record)
     
     # Sort genres alphabetically for the filter dropdown
     sorted_genres = sorted([g for g in all_genres if g])  # Filter out empty strings
@@ -177,7 +185,18 @@ def add_to_collection_api():
     except requests.RequestException as e:
         return jsonify({"error": f"Could not add to Discogs: {e}"}), 502
 
-    return jsonify({"added": release_id}), 201
+    # Send the new record back so the page can show it without reloading
+    try:
+        item = get_release_instance(DISCOGS_USERNAME, DISCOGS_TOKEN, int(release_id))
+    except requests.RequestException:
+        item = None
+    if not item:
+        return jsonify({"added": release_id, "record": None}), 201
+
+    item["tracks"] = get_release_tracks(int(release_id), DISCOGS_TOKEN)
+    cache_release(int(release_id), item.get("basic_information", {}), item["tracks"])
+    record = format_record(item, get_all_play_counts(), get_current_record())
+    return jsonify({"added": release_id, "record": record}), 201
 
 
 @app.route("/api/now_playing/clear", methods=["POST"])
