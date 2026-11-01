@@ -26,6 +26,8 @@ from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, cl
 load_dotenv()
 
 app = Flask(__name__)
+# Changes on every deploy so browsers fetch the new stylesheet instead of a cached one
+app.jinja_env.globals["css_version"] = int(os.path.getmtime(os.path.join(app.static_folder, "style.css")))
 
 DISCOGS_USERNAME = os.getenv("DISCOGS_USERNAME")
 DISCOGS_TOKEN = os.getenv("DISCOGS_TOKEN")
