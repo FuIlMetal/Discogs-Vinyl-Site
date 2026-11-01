@@ -949,6 +949,15 @@ h1 {
 }
 
 /* Add record modal */
+/* Pinned to the top and shorter so the on-screen keyboard doesn't cover it */
+#addModal {
+    align-items: flex-start;
+}
+
+#addModal .modal-content {
+    max-height: 55vh;
+}
+
 .add-header {
     flex-direction: column;
     gap: 12px;
