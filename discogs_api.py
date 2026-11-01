@@ -5,6 +5,7 @@ import json
 
 API_BASE = "https://api.discogs.com"
 DB_PATH = "vinyl_collection.db"  # Adjust path as needed
+PLAYS_FIELD_NAME = "Plays"  # Custom collection field in Discogs that stores play counts
 
 def init_db():
     """Create tables if they don't exist"""
@@ -246,6 +247,20 @@ def update_play_count(release_id: int, delta: int):
     conn.close()
     return new_count
 
+def set_play_count(release_id: int, count: int):
+    """Overwrite the local play count for a release"""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT OR REPLACE INTO play_counts (release_id, play_count)
+        VALUES (?, ?)
+    """, (release_id, count))
+    
+    conn.commit()
+    conn.close()
+
 def get_all_play_counts():
     """Get all play counts as a dictionary"""
     init_db()
@@ -437,3 +452,129 @@ def get_release_tracks(release_id: int, token: str):
     except Exception as e:
         print(f"Error fetching tracks for release {release_id}: {e}")
         return []
+
+def search_releases(query: str, token: str, vinyl_only: bool = True):
+    """Search the Discogs database for releases matching a query"""
+    url = f"{API_BASE}/database/search"
+    headers = {"User-Agent": "VinylPi/1.0"}
+    params = {"token": token, "q": query, "type": "release", "per_page": 25}
+    if vinyl_only:
+        params["format"] = "Vinyl"
+
+    r = requests.get(url, headers=headers, params=params)
+    r.raise_for_status()
+
+    results = []
+    for item in r.json().get("results", []):
+        results.append({
+            "id": item.get("id"),
+            "title": item.get("title", ""),  # Discogs formats this as "Artist - Title"
+            "year": item.get("year", ""),
+            "country": item.get("country", ""),
+            "label": (item.get("label") or [""])[0],
+            "catno": item.get("catno", ""),
+            "formats": ", ".join(item.get("format", []) or []),
+            "thumb": item.get("thumb", ""),
+        })
+    return results
+
+def add_to_collection(username: str, token: str, release_id: int, folder_id: int = 1):
+    """Add a release to the user's Discogs collection (folder 1 = Uncategorized)"""
+    url = f"{API_BASE}/users/{username}/collection/folders/{folder_id}/releases/{release_id}"
+    headers = {
+        "User-Agent": "VinylPi/1.0",
+        "Authorization": f"Discogs token={token}",
+    }
+
+    r = requests.post(url, headers=headers)
+    r.raise_for_status()
+    return r.json()
+
+
+# ---- Play counts stored in Discogs ----
+#
+# When a custom collection field named "Plays" exists in Discogs, it is the
+# source of truth for play counts and the local play_counts table is a cache.
+# Without that field, play counts are stored locally only.
+
+_plays_field_id = None
+
+def get_plays_field_id(username: str, token: str):
+    """Return the id of the "Plays" custom collection field, or None if it doesn't exist"""
+    global _plays_field_id
+    if _plays_field_id is not None:
+        return _plays_field_id
+
+    url = f"{API_BASE}/users/{username}/collection/fields"
+    headers = {"User-Agent": "VinylPi/1.0"}
+    params = {"token": token}
+
+    try:
+        r = requests.get(url, headers=headers, params=params)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error fetching collection fields: {e}")
+        return None
+
+    for field in r.json().get("fields", []):
+        if field.get("name", "").strip().lower() == PLAYS_FIELD_NAME.lower():
+            _plays_field_id = field["id"]
+            break
+    return _plays_field_id
+
+def parse_plays(notes: list, field_id: int):
+    """Read the play count from a collection item's notes, or None if it's unset"""
+    for note in notes or []:
+        if note.get("field_id") == field_id:
+            try:
+                return int(str(note.get("value", "")).strip())
+            except ValueError:
+                return None
+    return None
+
+def sync_play_counts_from_discogs(collection: list, field_id: int):
+    """Update the local play count cache with the values stored in Discogs"""
+    for item in collection:
+        release_id = item.get("basic_information", {}).get("id")
+        plays = parse_plays(item.get("notes"), field_id)
+        # Unset in Discogs means not migrated yet, so keep the local value
+        if release_id and plays is not None:
+            set_play_count(release_id, plays)
+
+def get_release_instance(username: str, token: str, release_id: int):
+    """Get the first collection instance of a release (a release can be owned more than once)"""
+    url = f"{API_BASE}/users/{username}/collection/releases/{release_id}"
+    headers = {"User-Agent": "VinylPi/1.0"}
+    params = {"token": token}
+
+    r = requests.get(url, headers=headers, params=params)
+    r.raise_for_status()
+    releases = r.json().get("releases", [])
+    return releases[0] if releases else None
+
+def set_discogs_plays(username: str, token: str, instance: dict, field_id: int, count: int):
+    """Write a play count to the "Plays" field of a collection instance"""
+    url = (f"{API_BASE}/users/{username}/collection/folders/{instance['folder_id']}"
+           f"/releases/{instance['id']}/instances/{instance['instance_id']}/fields/{field_id}")
+    headers = {
+        "User-Agent": "VinylPi/1.0",
+        "Authorization": f"Discogs token={token}",
+    }
+
+    r = requests.post(url, headers=headers, json={"value": str(count)})
+    r.raise_for_status()
+
+def update_discogs_play_count(username: str, token: str, release_id: int, delta: int, field_id: int):
+    """Update a play count in Discogs, reading the current value first so other devices' plays aren't lost"""
+    instance = get_release_instance(username, token, release_id)
+    if not instance:
+        raise ValueError(f"Release {release_id} is not in the collection")
+
+    current = parse_plays(instance.get("notes"), field_id)
+    if current is None:
+        current = get_play_count(release_id)  # Not migrated yet, start from the local count
+
+    new_count = max(0, current + delta)
+    set_discogs_plays(username, token, instance, field_id, new_count)
+    set_play_count(release_id, new_count)
+    return new_count

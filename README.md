@@ -57,3 +57,22 @@ If you're using the WS2812B LED strip feature, see **[LED_SETUP.md](LED_SETUP.md
 - Hardware wiring (GPIO 10 / Physical Pin 19)
 - Software setup and permissions
 - Troubleshooting guide
+
+## Automatic deploys on the Raspberry Pi
+
+Once set up, the Pi checks GitHub every 5 minutes. If `main` has new commits it pulls them, installs requirements, and restarts `discogs-vinyl-site.service`. To deploy, merge to `main`.
+
+One-time setup on the Pi, from the repo directory:
+
+```bash
+git pull
+bash deploy/install-auto-update.sh
+```
+
+Check recent deploys with `journalctl -u vinyl-update -n 20`. Run `sudo systemctl start vinyl-update` to deploy right away.
+
+## Adding records and play counts
+
+The **➕ Add Record** button searches Discogs and adds releases to your collection.
+
+If your Discogs collection has a custom field named **Plays** (Discogs > Collection > Settings > Custom fields, type text), play counts are stored there so every device sees the same counts. After creating the field, upload existing counts once from the Pi with `venv/bin/python migrate_plays_to_discogs.py --dry-run`, then without `--dry-run`.

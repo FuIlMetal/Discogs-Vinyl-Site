@@ -18,9 +18,14 @@
           ✕
         </button>
       </div>
-      <button id="randomRecordBtn" class="random-btn" onclick="openRandomRecord()" aria-label="Open random record">
-        🎲 Random Record
-      </button>
+      <div class="header-buttons">
+        <button id="randomRecordBtn" class="random-btn" onclick="openRandomRecord()" aria-label="Open random record">
+          🎲 Random Record
+        </button>
+        <button id="addRecordBtn" class="random-btn" onclick="openAddModal()" aria-label="Add a record">
+          ➕ Add Record
+        </button>
+      </div>
     </div>
 
     <div class="controls">
@@ -122,6 +127,27 @@
             <div id="lyricsContent" class="lyrics-content">
                 <div class="loading-spinner">Loading lyrics...</div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for adding records -->
+<div id="addModal" class="modal">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <button class="close-btn" onclick="closeAddModal()">&times;</button>
+        <div class="modal-header add-header">
+            <h2>Add a Record</h2>
+            <form class="add-search" onsubmit="searchDiscogs(event)">
+                <input id="addSearchInput" type="text" placeholder="Artist, album, or barcode…" autocomplete="off">
+                <button type="submit" class="play-btn">Search</button>
+            </form>
+            <label class="vinyl-only">
+                <input id="vinylOnly" type="checkbox" checked> Vinyl only
+            </label>
+        </div>
+        <div class="modal-body">
+            <div id="addStatus" class="add-status"></div>
+            <ul id="searchResults"></ul>
         </div>
     </div>
 </div>
@@ -357,6 +383,7 @@
         })
         .then(response => response.json())
         .then(data => {
+            if (data.error) throw new Error(data.error);
             const playCountEl = document.getElementById("playCount");
             playCountEl.textContent = data.play_count;
             
@@ -415,6 +442,7 @@
         })
         .catch(error => {
             console.error("Error updating play count:", error);
+            alert("Couldn't update the play count. Please try again.");
         });
     }
 
@@ -433,6 +461,7 @@
         })
         .then(response => response.json())
         .then(data => {
+            if (data.error) throw new Error(data.error);
             const playCountEl = document.getElementById("playCount");
             playCountEl.textContent = data.play_count;
             
@@ -457,6 +486,7 @@
         })
         .catch(error => {
             console.error("Error updating play count:", error);
+            alert("Couldn't update the play count. Please try again.");
         });
     }
 
@@ -577,6 +607,138 @@
     document.getElementById("lyricsModal").addEventListener("click", (e) => {
         if (e.target === e.currentTarget) {
             closeLyricsModal();
+        }
+    });
+
+    // ---- Add record ----
+
+    let collectionChanged = false;
+
+    function openAddModal() {
+        scrollPosition = window.scrollY || window.pageYOffset;
+        document.body.classList.add("modal-open");
+        document.getElementById("addModal").classList.add("show");
+        document.getElementById("addSearchInput").focus();
+    }
+
+    function closeAddModal() {
+        document.getElementById("addModal").classList.remove("show");
+
+        // Reload so newly added records show up in the grid
+        if (collectionChanged) {
+            window.location.reload();
+            return;
+        }
+
+        document.body.classList.remove("modal-open");
+        window.scrollTo(0, scrollPosition);
+        scrollPosition = 0;
+    }
+
+    function setAddStatus(message) {
+        document.getElementById("addStatus").textContent = message;
+    }
+
+    function searchDiscogs(event) {
+        event.preventDefault();
+        const query = document.getElementById("addSearchInput").value.trim();
+        if (!query) return;
+
+        const vinylOnly = document.getElementById("vinylOnly").checked ? "1" : "0";
+        const resultsEl = document.getElementById("searchResults");
+        resultsEl.innerHTML = "";
+        setAddStatus("Searching…");
+
+        fetch(`/api/search?q=${encodeURIComponent(query)}&vinyl_only=${vinylOnly}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    setAddStatus(data.error);
+                    return;
+                }
+                if (data.results.length === 0) {
+                    setAddStatus("No results found.");
+                    return;
+                }
+                setAddStatus("");
+                data.results.forEach(result => resultsEl.appendChild(buildResultRow(result)));
+            })
+            .catch(error => {
+                console.error("Error searching Discogs:", error);
+                setAddStatus("Search failed. Check your connection and try again.");
+            });
+    }
+
+    function buildResultRow(result) {
+        const li = document.createElement("li");
+        li.className = "search-result";
+
+        const img = document.createElement("img");
+        img.src = result.thumb;
+        img.alt = "";
+
+        const info = document.createElement("div");
+        info.className = "search-result-info";
+
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = result.title;
+
+        const details = document.createElement("div");
+        details.className = "search-result-details";
+        details.textContent = [result.year, result.country, result.label, result.catno]
+            .filter(Boolean).join(" · ");
+
+        const formats = document.createElement("div");
+        formats.className = "search-result-details";
+        formats.textContent = result.formats;
+
+        info.append(title, details, formats);
+
+        const btn = document.createElement("button");
+        btn.className = "play-btn";
+        if (allRecords.some(r => r.id === result.id)) {
+            btn.textContent = "Owned";
+            btn.disabled = true;
+        } else {
+            btn.textContent = "Add";
+            btn.onclick = () => addRecord(result.id, btn);
+        }
+
+        li.append(img, info, btn);
+        return li;
+    }
+
+    function addRecord(releaseId, btn) {
+        btn.disabled = true;
+        btn.textContent = "Adding…";
+
+        fetch("/api/collection", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                release_id: releaseId
+            })
+        })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) throw new Error(data.error);
+            btn.textContent = "Added ✓";
+            collectionChanged = true;
+        })
+        .catch(error => {
+            console.error("Error adding record:", error);
+            btn.disabled = false;
+            btn.textContent = "Retry";
+            setAddStatus("Couldn't add that record to Discogs.");
+        });
+    }
+
+    document.getElementById("addModal").addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) {
+            closeAddModal();
         }
     });
 
