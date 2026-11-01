@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from discogs_api import (
@@ -9,6 +10,11 @@ from discogs_api import (
     get_current_record,
     clear_now_playing,
     get_last_played,
+    search_releases,
+    add_to_collection,
+    get_plays_field_id,
+    sync_play_counts_from_discogs,
+    update_discogs_play_count,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
 from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, clear_leds
@@ -32,6 +38,11 @@ def index():
 
     # Use the new cached version
     releases = get_collection(DISCOGS_USERNAME, DISCOGS_TOKEN)
+    
+    # Pull play counts stored in Discogs into the local cache
+    plays_field_id = get_plays_field_id(DISCOGS_USERNAME, DISCOGS_TOKEN)
+    if plays_field_id:
+        sync_play_counts_from_discogs(releases, plays_field_id)
     
     # Get all play counts
     play_counts = get_all_play_counts()
@@ -117,7 +128,14 @@ def update_play_count_api():
     if not release_id:
         return jsonify({"error": "release_id is required"}), 400
     
-    new_count = update_play_count(release_id, delta)
+    plays_field_id = get_plays_field_id(DISCOGS_USERNAME, DISCOGS_TOKEN)
+    if not plays_field_id:
+        new_count = update_play_count(release_id, delta)
+    else:
+        try:
+            new_count = update_discogs_play_count(DISCOGS_USERNAME, DISCOGS_TOKEN, release_id, delta, plays_field_id)
+        except (requests.RequestException, ValueError) as e:
+            return jsonify({"error": f"Could not update play count in Discogs: {e}"}), 502
 
     # If this was a positive spin, mark as current record (both last played + now playing)
     if delta and delta > 0:
@@ -126,6 +144,40 @@ def update_play_count_api():
     current_id = get_current_record()
 
     return jsonify({"play_count": new_count, "current_record_id": current_id})
+
+
+@app.route("/api/search", methods=["GET"])
+def search_api():
+    """Search Discogs for releases to add"""
+    query = request.args.get("q", "").strip()
+    vinyl_only = request.args.get("vinyl_only", "1") == "1"
+
+    if not query:
+        return jsonify({"error": "q is required"}), 400
+
+    try:
+        results = search_releases(query, DISCOGS_TOKEN, vinyl_only)
+    except requests.RequestException as e:
+        return jsonify({"error": f"Discogs search failed: {e}"}), 502
+
+    return jsonify({"results": results})
+
+
+@app.route("/api/collection", methods=["POST"])
+def add_to_collection_api():
+    """Add a release to the Discogs collection"""
+    data = request.get_json()
+    release_id = data.get("release_id")
+
+    if not release_id:
+        return jsonify({"error": "release_id is required"}), 400
+
+    try:
+        add_to_collection(DISCOGS_USERNAME, DISCOGS_TOKEN, int(release_id))
+    except requests.RequestException as e:
+        return jsonify({"error": f"Could not add to Discogs: {e}"}), 502
+
+    return jsonify({"added": release_id}), 201
 
 
 @app.route("/api/now_playing/clear", methods=["POST"])
