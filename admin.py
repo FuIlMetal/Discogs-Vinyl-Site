@@ -36,6 +36,12 @@ def require_admin(view):
     return wrapper
 
 
+@admin.app_context_processor
+def inject_is_admin():
+    # Lets public templates render admin-only bits server-side (never sent to non-Tailscale visitors)
+    return {"is_admin": is_admin_ip(client_ip())}
+
+
 SORT_KEYS = {
     "artist": lambda r: r["artist"].lower(),
     "title": lambda r: r["title"].lower(),
