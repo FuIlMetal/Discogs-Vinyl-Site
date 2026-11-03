@@ -81,7 +81,7 @@ LED settings are in `led_controller.py`:
 
 1. **Check Diagnostics Endpoint**:
    ```
-   http://your-pi-ip:8080/api/leds/diagnostics
+   http://your-pi-ip/api/leds/diagnostics
    ```
    This will show:
    - Library installation status

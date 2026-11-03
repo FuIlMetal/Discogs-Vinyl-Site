@@ -55,7 +55,7 @@ source venv/bin/activate
 python app.py
 ```
 
-Visit `http://your-pi-ip:8080` in your browser to verify it works. Press `Ctrl+C` to stop.
+On the Pi, run `curl http://localhost:8080` in another terminal to verify it works (Flask only listens on localhost; use nginx on port 80 from other devices). Press `Ctrl+C` to stop.
 
 ## Step 4: Set Up as a Systemd Service
 
