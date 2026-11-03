@@ -1,12 +1,21 @@
 """Private admin pages. Only reachable over Tailscale (nginx blocks everyone else; require_admin is the backup)."""
 import ipaddress
 import os
+from datetime import datetime
 from functools import wraps
 
 import requests
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request
 
-from discogs_api import get_all_play_counts, get_collection, get_collection_folders, get_collection_value
+from discogs_api import (
+    delete_collection_instance,
+    forget_release,
+    get_all_play_counts,
+    get_collection,
+    get_collection_folders,
+    get_collection_value,
+    get_marketplace_stats,
+)
 
 admin = Blueprint("admin", __name__)
 
@@ -74,6 +83,8 @@ def admin_page():
         formats = basic.get("formats") or [{}]
         records.append({
             "id": basic.get("id"),
+            "instance_id": item.get("instance_id"),
+            "folder_id": item.get("folder_id"),
             "artist": ", ".join(a["name"] for a in basic.get("artists", [])),
             "title": basic.get("title", ""),
             "year": basic.get("year") or None,
@@ -96,6 +107,39 @@ def admin_page():
 
     return render_template("admin.html", records=records, total=len(releases), value=value,
                            errors=errors, search=search, sort=sort, desc=desc)
+
+
+@admin.route("/api/admin/price/<int:release_id>")
+@require_admin
+def price(release_id):
+    try:
+        return jsonify(get_marketplace_stats(release_id, os.getenv("DISCOGS_TOKEN")))
+    except requests.RequestException as e:
+        return jsonify({"error": f"Couldn't load price: {e}"}), 502
+
+
+@admin.route("/api/admin/delete", methods=["POST"])
+@require_admin
+def delete_record():
+    # JSON only: a cross-site <form> can't send it, and there's no CORS, so other sites can't trigger deletes
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    data = request.get_json(silent=True) or {}
+    try:
+        release_id, instance_id, folder_id = (int(data[k]) for k in ("release_id", "instance_id", "folder_id"))
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "release_id, instance_id and folder_id must be integers"}), 400
+
+    try:
+        delete_collection_instance(os.getenv("DISCOGS_USERNAME"), os.getenv("DISCOGS_TOKEN"),
+                                   folder_id, release_id, instance_id)
+    except requests.RequestException as e:
+        return jsonify({"error": f"Discogs refused the delete: {e}"}), 502
+
+    forget_release(release_id)
+    print(f"{datetime.now().isoformat(timespec='seconds')} ADMIN DELETE release={release_id} "
+          f"instance={instance_id} folder={folder_id} by {client_ip()}")
+    return jsonify({"deleted": release_id})
 
 
 if __name__ == "__main__":

@@ -7,23 +7,50 @@
     <title>Vinyl Admin</title>
     <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
     <style>
+      .admin-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
       .admin-value { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
       .admin-value div { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 16px; min-width: 120px; }
       .admin-value small { display: block; opacity: 0.7; font-size: 0.8em; }
       .admin-value strong { font-size: 1.3em; }
       .admin-error { background: rgba(255,80,80,0.2); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
       .admin-search { display: flex; gap: 8px; margin: 16px 0; }
-      .admin-search input { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 16px; }
+      .admin-search input { flex: 1; min-width: 0; padding: 8px; border-radius: 6px; border: none; font-size: 16px; }
       .admin-table-wrap { overflow-x: auto; }
       .admin-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
       .admin-table th, .admin-table td { text-align: left; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
       .admin-table th a { color: inherit; }
       .admin-table td.num { text-align: right; }
+      .admin-table td.clip { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+      .admin-table tbody tr { cursor: pointer; }
+      .admin-table tbody tr:hover, .admin-table tbody tr:focus { background: rgba(102,126,234,0.2); outline: none; }
+      @media (max-width: 600px) {
+        .admin-table td.clip { max-width: 110px; }
+        .hide-sm { display: none; }
+      }
+      .admin-dialog { margin: auto; width: min(420px, calc(100vw - 32px)); background: #1a1a2e; color: #fff;
+                      border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; }
+      .admin-dialog::backdrop { background: rgba(0,0,0,0.6); }
+      .admin-dialog h2 { font-size: 1.2em; margin-bottom: 4px; overflow-wrap: anywhere; }
+      .admin-dialog .artist { opacity: 0.8; margin-bottom: 12px; overflow-wrap: anywhere; }
+      .admin-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-bottom: 12px; }
+      .admin-dialog dt { opacity: 0.7; }
+      .admin-dialog a { color: #a5b4fc; }
+      .admin-dialog-actions { display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; }
+      .danger-btn { padding: 12px 16px; border-radius: 12px; border: none; background: #c0392b; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+      .danger-btn:disabled { opacity: 0.6; cursor: wait; }
     </style>
 </head>
 <body>
   <div class="container">
-    <h1>Vinyl Admin</h1>
+    <div class="admin-header">
+      <h1>Vinyl Admin</h1>
+      <details class="admin-menu">
+        <summary class="random-btn" aria-label="Menu">☰</summary>
+        <nav class="admin-menu-items">
+          <a href="/">Home</a>
+        </nav>
+      </details>
+    </div>
 
     {% for e in errors %}<p class="admin-error">{{ e }}</p>{% endfor %}
 
@@ -42,11 +69,11 @@
       <button class="random-btn" type="submit">Search</button>
     </form>
 
-    <p>{{ records|length }} of {{ total }} records</p>
+    <p><span id="shownCount">{{ records|length }}</span> of <span id="totalCount">{{ total }}</span> records · tap a row for details</p>
 
-    {% macro col(key, label) -%}
+    {% macro col(key, label, cls='') -%}
       {%- set next_dir = 'asc' if (sort == key and desc) else ('desc' if sort == key else 'asc') -%}
-      <th{% if sort == key %} aria-sort="{{ 'descending' if desc else 'ascending' }}"{% endif %}>
+      <th class="{{ cls }}"{% if sort == key %} aria-sort="{{ 'descending' if desc else 'ascending' }}"{% endif %}>
         <a href="?search={{ search|urlencode }}&sort={{ key }}&dir={{ next_dir }}">{{ label }}{% if sort == key %} {{ '▼' if desc else '▲' }}{% endif %}</a>
       </th>
     {%- endmacro %}
@@ -58,21 +85,21 @@
             {{ col('artist', 'Artist') }}
             {{ col('title', 'Title') }}
             {{ col('year', 'Year') }}
-            <th>Format</th>
-            <th>Folder</th>
-            {{ col('added', 'Added') }}
+            <th class="hide-sm">Format</th>
+            <th class="hide-sm">Folder</th>
+            {{ col('added', 'Added', 'hide-sm') }}
             {{ col('plays', 'Plays') }}
           </tr>
         </thead>
         <tbody>
           {% for r in records %}
-          <tr>
-            <td>{{ r.artist }}</td>
-            <td>{{ r.title }}</td>
+          <tr tabindex="0" data-record='{{ r|tojson }}'>
+            <td class="clip">{{ r.artist }}</td>
+            <td class="clip">{{ r.title }}</td>
             <td>{{ r.year or '' }}</td>
-            <td>{{ r.format }}</td>
-            <td>{{ r.folder }}</td>
-            <td>{{ r.added }}</td>
+            <td class="hide-sm">{{ r.format }}</td>
+            <td class="hide-sm">{{ r.folder }}</td>
+            <td class="hide-sm">{{ r.added }}</td>
             <td class="num">{{ r.plays }}</td>
           </tr>
           {% endfor %}
@@ -80,5 +107,90 @@
       </table>
     </div>
   </div>
+
+  <dialog id="recordDialog" class="admin-dialog" aria-labelledby="dlgTitle">
+    <h2 id="dlgTitle"></h2>
+    <p class="artist" id="dlgArtist"></p>
+    <dl>
+      <dt>Year</dt><dd id="dlgYear"></dd>
+      <dt>Format</dt><dd id="dlgFormat"></dd>
+      <dt>Folder</dt><dd id="dlgFolder"></dd>
+      <dt>Added</dt><dd id="dlgAdded"></dd>
+      <dt>Plays</dt><dd id="dlgPlays"></dd>
+      <dt>Lowest price</dt><dd id="dlgPrice" aria-live="polite"></dd>
+    </dl>
+    <a id="dlgLink" target="_blank" rel="noopener">Low / median / high sales on Discogs ↗</a>
+    <p class="admin-error" id="dlgError" hidden></p>
+    <div class="admin-dialog-actions">
+      <button class="danger-btn" id="dlgDelete" type="button">Delete</button>
+      <button class="random-btn" id="dlgClose" type="button">Close</button>
+    </div>
+  </dialog>
+
+  <script>
+    const dialog = document.getElementById("recordDialog");
+    const $ = id => document.getElementById(id);
+    let currentRow = null;
+
+    function openRecord(row) {
+      const r = JSON.parse(row.dataset.record);
+      currentRow = row;
+      $("dlgTitle").textContent = r.title;
+      $("dlgArtist").textContent = r.artist;
+      $("dlgYear").textContent = r.year || "—";
+      $("dlgFormat").textContent = r.format || "—";
+      $("dlgFolder").textContent = r.folder;
+      $("dlgAdded").textContent = r.added;
+      $("dlgPlays").textContent = r.plays;
+      $("dlgLink").href = "https://www.discogs.com/release/" + r.id;
+      $("dlgError").hidden = true;
+      $("dlgDelete").disabled = false;
+      $("dlgPrice").textContent = "Loading…";
+      dialog.showModal();
+
+      fetch("/api/admin/price/" + r.id)
+        .then(res => res.json())
+        .then(d => {
+          if (currentRow !== row) return;  // user already opened another record
+          if (d.error) { $("dlgPrice").textContent = "Unavailable"; return; }
+          const p = d.lowest_price;
+          $("dlgPrice").textContent = p
+            ? new Intl.NumberFormat(undefined, { style: "currency", currency: p.currency }).format(p.value) + ` (${d.num_for_sale} for sale)`
+            : "None for sale right now";
+        })
+        .catch(() => { $("dlgPrice").textContent = "Unavailable"; });
+    }
+
+    document.querySelectorAll(".admin-table tbody tr").forEach(row => {
+      row.addEventListener("click", () => openRecord(row));
+      row.addEventListener("keydown", e => { if (e.key === "Enter") openRecord(row); });
+    });
+
+    $("dlgClose").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });  // tap outside closes
+
+    $("dlgDelete").addEventListener("click", async () => {
+      const r = JSON.parse(currentRow.dataset.record);
+      if (!confirm(`Delete "${r.title}" by ${r.artist} from your Discogs collection?\n\nThis can't be undone.`)) return;
+      $("dlgDelete").disabled = true;
+      try {
+        const res = await fetch("/api/admin/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ release_id: r.id, instance_id: r.instance_id, folder_id: r.folder_id }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || "Delete failed");
+        currentRow.remove();
+        $("shownCount").textContent = Number($("shownCount").textContent) - 1;
+        $("totalCount").textContent = Number($("totalCount").textContent) - 1;
+        dialog.close();
+      } catch (err) {
+        $("dlgError").textContent = err.message;
+        $("dlgError").hidden = false;
+        $("dlgDelete").disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>

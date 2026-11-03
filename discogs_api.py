@@ -597,3 +597,29 @@ def get_collection_value(username: str, token: str):
     r = requests.get(url, headers=headers)
     r.raise_for_status()
     return r.json()
+
+
+def get_marketplace_stats(release_id: int, token: str, currency: str = "USD"):
+    """Lowest current listing price and number for sale (the API has no per-release min/median/max)"""
+    url = f"{API_BASE}/marketplace/stats/{release_id}"
+    headers = {"User-Agent": "VinylPi/1.0", "Authorization": f"Discogs token={token}"}
+    r = requests.get(url, headers=headers, params={"curr_abbr": currency})
+    r.raise_for_status()
+    return r.json()
+
+
+def delete_collection_instance(username: str, token: str, folder_id: int, release_id: int, instance_id: int):
+    """Remove one copy of a release from the Discogs collection"""
+    url = (f"{API_BASE}/users/{username}/collection/folders/{folder_id}"
+           f"/releases/{release_id}/instances/{instance_id}")
+    headers = {"User-Agent": "VinylPi/1.0", "Authorization": f"Discogs token={token}"}
+    r = requests.delete(url, headers=headers)
+    r.raise_for_status()
+
+
+def forget_release(release_id: int):
+    """Drop a release's cached details so a re-add fetches fresh data"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM releases WHERE release_id = ?", (release_id,))
+    conn.commit()
+    conn.close()
