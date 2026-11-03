@@ -25,6 +25,14 @@
         <button id="addRecordBtn" class="random-btn" onclick="openAddModal()" aria-label="Add a record">
           ➕ Add Record
         </button>
+        {% if is_admin %}
+        <details class="admin-menu">
+          <summary class="random-btn" aria-label="Admin menu">☰</summary>
+          <nav class="admin-menu-items">
+            <a href="/admin">Admin</a>
+          </nav>
+        </details>
+        {% endif %}
       </div>
     </div>
 

@@ -1055,3 +1055,42 @@ h1 {
     transform: none;
     cursor: default;
 }
+
+/* Admin menu (only rendered for Tailscale visitors) */
+.admin-menu {
+    position: relative;
+}
+
+.admin-menu summary {
+    list-style: none;
+}
+
+.admin-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.admin-menu-items {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    background: #1a1a2e;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 6px;
+    min-width: 140px;
+    z-index: 50;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.admin-menu-items a {
+    display: block;
+    padding: 10px 12px;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 6px;
+}
+
+.admin-menu-items a:hover,
+.admin-menu-items a:focus {
+    background: rgba(102, 126, 234, 0.3);
+}
