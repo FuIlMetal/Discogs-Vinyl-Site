@@ -298,4 +298,5 @@ if __name__ == "__main__":
     # Allow port to be configured via environment variable (default to 8080 for non-root)
     port = int(os.getenv("FLASK_PORT", 8080))
     debug = os.getenv("FLASK_DEBUG", "False").lower() == "true"
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    # Localhost only: nginx is the public entry point, so nobody can bypass it on 8080
+    app.run(host="127.0.0.1", port=port, debug=debug)
