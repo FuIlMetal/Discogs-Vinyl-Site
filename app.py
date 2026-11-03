@@ -21,11 +21,13 @@ from discogs_api import (
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
 from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, clear_leds
+from admin import admin
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
+app.register_blueprint(admin)
 # Changes on every deploy so browsers fetch the new stylesheet instead of a cached one
 app.jinja_env.globals["css_version"] = int(os.path.getmtime(os.path.join(app.static_folder, "style.css")))
 

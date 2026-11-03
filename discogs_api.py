@@ -578,3 +578,22 @@ def update_discogs_play_count(username: str, token: str, release_id: int, delta:
     set_discogs_plays(username, token, instance, field_id, new_count)
     set_play_count(release_id, new_count)
     return new_count
+
+
+# ---- Admin helpers ----
+
+def get_collection_folders(username: str, token: str):
+    """Map folder id -> folder name"""
+    url = f"{API_BASE}/users/{username}/collection/folders"
+    r = requests.get(url, headers={"User-Agent": "VinylPi/1.0"}, params={"token": token})
+    r.raise_for_status()
+    return {f["id"]: f["name"] for f in r.json().get("folders", [])}
+
+
+def get_collection_value(username: str, token: str):
+    """Discogs' min/median/max estimate for the whole collection (formatted strings like "$1,234.00")"""
+    url = f"{API_BASE}/users/{username}/collection/value"
+    headers = {"User-Agent": "VinylPi/1.0", "Authorization": f"Discogs token={token}"}
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    return r.json()

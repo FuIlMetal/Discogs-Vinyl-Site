@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Vinyl Admin</title>
+    <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
+    <style>
+      .admin-value { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+      .admin-value div { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 16px; min-width: 120px; }
+      .admin-value small { display: block; opacity: 0.7; font-size: 0.8em; }
+      .admin-value strong { font-size: 1.3em; }
+      .admin-error { background: rgba(255,80,80,0.2); padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+      .admin-search { display: flex; gap: 8px; margin: 16px 0; }
+      .admin-search input { flex: 1; padding: 8px; border-radius: 6px; border: none; font-size: 16px; }
+      .admin-table-wrap { overflow-x: auto; }
+      .admin-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+      .admin-table th, .admin-table td { text-align: left; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
+      .admin-table th a { color: inherit; }
+      .admin-table td.num { text-align: right; }
+    </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Vinyl Admin</h1>
+
+    {% for e in errors %}<p class="admin-error">{{ e }}</p>{% endfor %}
+
+    {% if value %}
+    <div class="admin-value" aria-label="Collection value">
+      <div><small>Minimum</small><strong>{{ value.minimum }}</strong></div>
+      <div><small>Median</small><strong>{{ value.median }}</strong></div>
+      <div><small>Maximum</small><strong>{{ value.maximum }}</strong></div>
+    </div>
+    {% endif %}
+
+    <form class="admin-search" method="get">
+      <input type="search" name="search" value="{{ search }}" placeholder="Search artist or title" aria-label="Search records">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ 'desc' if desc else 'asc' }}">
+      <button class="random-btn" type="submit">Search</button>
+    </form>
+
+    <p>{{ records|length }} of {{ total }} records</p>
+
+    {% macro col(key, label) -%}
+      {%- set next_dir = 'asc' if (sort == key and desc) else ('desc' if sort == key else 'asc') -%}
+      <th{% if sort == key %} aria-sort="{{ 'descending' if desc else 'ascending' }}"{% endif %}>
+        <a href="?search={{ search|urlencode }}&sort={{ key }}&dir={{ next_dir }}">{{ label }}{% if sort == key %} {{ '▼' if desc else '▲' }}{% endif %}</a>
+      </th>
+    {%- endmacro %}
+
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            {{ col('artist', 'Artist') }}
+            {{ col('title', 'Title') }}
+            {{ col('year', 'Year') }}
+            <th>Format</th>
+            <th>Folder</th>
+            {{ col('added', 'Added') }}
+            {{ col('plays', 'Plays') }}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+          <tr>
+            <td>{{ r.artist }}</td>
+            <td>{{ r.title }}</td>
+            <td>{{ r.year or '' }}</td>
+            <td>{{ r.format }}</td>
+            <td>{{ r.folder }}</td>
+            <td>{{ r.added }}</td>
+            <td class="num">{{ r.plays }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
