@@ -1,147 +1,178 @@
-import os
-try:
-    from rpi_ws281x import PixelStrip, Color
-    WS281X_AVAILABLE = True
-except ImportError:
-    # Library not available (e.g., on Windows or not installed)
-    WS281X_AVAILABLE = False
-    print("rpi-ws281x not available - LED functionality disabled")
+"""Talks to the Arduino that drives the shelf LEDs (see arduino/vinyl_leds and LED_SETUP.md)."""
+import colorsys
+import glob
+import io
+import threading
 
-# LED strip configuration
-LED_COUNT = 144        # Number of LED pixels (1m strip with 144 LEDs/m = 144 LEDs total)
-LED_PIN = 10          # GPIO pin connected to the pixels (10 = SPI0 MOSI, recommended for WS2812B)
-LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_DMA = 10          # DMA channel to use for generating signal
-LED_BRIGHTNESS = 77   # Set to 0 for darkest and 255 for brightest (30% = ~77)
-LED_INVERT = False    # True to invert the signal
-LED_CHANNEL = 0       # Set to '1' for GPIOs 13, 19, 41, 45 or 53
+import requests
+import serial
+from PIL import Image
 
-# Initialize strip (None if not on Raspberry Pi)
-strip = None
+from discogs_api import get_led_brightness
 
-def init_led_strip():
-    """Initialize the LED strip. Returns True if successful."""
-    global strip
-    if not WS281X_AVAILABLE:
-        print("DEBUG: rpi-ws281x library not available")
-        return False
-    try:
-        # Only initialize on Raspberry Pi
-        if os.path.exists('/proc/device-tree/model'):
-            print(f"DEBUG: Initializing LED strip - {LED_COUNT} LEDs on GPIO {LED_PIN}")
-            strip = PixelStrip(
-                LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, 
-                LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL
-            )
-            strip.begin()
-            print(f"DEBUG: LED strip initialized successfully with {strip.numPixels()} pixels")
-            return True
-        else:
-            print("DEBUG: Not running on Raspberry Pi - LED strip disabled")
-            return False
-    except Exception as e:
-        print(f"DEBUG: Error initializing LED strip: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+LED_COUNT = 102      # LEDs in use: 28in of shelf on a 144 LEDs/m strip. Change this if you cut it differently.
+BAUD_RATE = 115200   # Must match the sketch
+SPOT_WIDTH = 3       # LEDs lit to mark a record
+SPOT_SECONDS = 60    # How long a marked spot stays lit
+SPOT_COLOR = (255, 255, 255)
+GLOW_BEHIND_SPOT = 0.15  # Dim the album glow while a spot is lit so the spot stands out
+WARM_WHITE = (255, 170, 90)  # Glow for covers with no real color, like black and white sleeves
+OFF = (0, 0, 0)
 
-def set_all_leds(brightness_percent=30):
-    """
-    Set all LEDs to a specific brightness (0-100%).
-    Returns True if successful.
-    """
-    global strip
-    
-    print(f"DEBUG: set_all_leds called with {brightness_percent}% brightness")
-    
-    if strip is None:
-        print("DEBUG: Strip not initialized, attempting initialization...")
-        if not init_led_strip():
-            print("DEBUG: Failed to initialize LED strip")
-            return False
-    
-    try:
-        # Convert percentage to 0-255 range
-        brightness = int((brightness_percent / 100.0) * 255)
-        brightness = max(0, min(255, brightness))  # Clamp to valid range
-        
-        print(f"DEBUG: Setting {strip.numPixels()} LEDs to brightness value {brightness} ({(brightness/255)*100:.1f}%)")
-        
-        # Set all pixels to white at specified brightness
-        color = Color(brightness, brightness, brightness)
-        
-        for i in range(strip.numPixels()):
-            strip.setPixelColor(i, color)
-        
-        strip.show()
-        print("DEBUG: LEDs updated and shown successfully")
-        return True
-    except Exception as e:
-        print(f"DEBUG: Error setting LEDs: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+_lock = threading.RLock()
+_port = None
+_ambient = None  # Color the whole strip returns to, or None for off
+_timer = None
+_generation = 0  # Lets a spot timer that already fired notice it's out of date
 
-def get_led_diagnostics():
-    """Get diagnostic information about LED setup."""
-    diagnostics = {
-        "library_available": WS281X_AVAILABLE,
-        "is_raspberry_pi": os.path.exists('/proc/device-tree/model'),
-        "strip_initialized": strip is not None,
-        "config": {
-            "led_count": LED_COUNT,
-            "gpio_pin": LED_PIN,
-            "brightness": LED_BRIGHTNESS,
-            "dma_channel": LED_DMA,
-            "channel": LED_CHANNEL
-        }
-    }
-    
-    # Try to get more info
-    if not WS281X_AVAILABLE:
-        diagnostics["error"] = "rpi-ws281x library not installed. Run: pip install rpi-ws281x"
-    elif not diagnostics["is_raspberry_pi"]:
-        diagnostics["error"] = "Not running on Raspberry Pi"
-    elif strip is None:
-        diagnostics["error"] = "Strip not initialized - check service logs for initialization errors"
-        # Try to initialize to get the actual error
+
+def _close_port():
+    global _port
+    if _port:
         try:
-            if not init_led_strip():
-                diagnostics["init_error"] = "Initialization failed - check GPIO permissions and hardware connection"
-        except Exception as e:
-            diagnostics["init_error"] = f"Initialization exception: {str(e)}"
-    else:
-        diagnostics["num_pixels"] = strip.numPixels()
-    
-    return diagnostics
+            _port.close()
+        except (serial.SerialException, OSError):
+            pass
+    _port = None
 
-def clear_leds():
-    """Turn off all LEDs."""
-    global strip
-    
-    print("DEBUG: clear_leds called")
-    
-    if strip is None:
-        print("DEBUG: Strip not initialized, attempting initialization...")
-        if not init_led_strip():
-            print("DEBUG: Failed to initialize LED strip for clearing")
-            return False
-    
-    try:
-        num_pixels = strip.numPixels()
-        print(f"DEBUG: Clearing {num_pixels} LEDs")
-        
-        # Set all pixels to black (off)
-        color = Color(0, 0, 0)
-        for i in range(num_pixels):
-            strip.setPixelColor(i, color)
-        
-        strip.show()
-        print("DEBUG: LEDs cleared and shown successfully")
+
+def _open_port():
+    global _port
+    if _port:
         return True
-    except Exception as e:
-        print(f"DEBUG: Error clearing LEDs: {e}")
-        import traceback
-        traceback.print_exc()
+    # Uno R3s show up as ttyACM*, clones as ttyUSB*. The number can change after a replug.
+    ports = sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*"))
+    if not ports:
+        return False
+    _port = serial.Serial(ports[0], BAUD_RATE, timeout=3)
+    _port.readline()  # Opening the port reboots the Uno, so wait for READY (or the timeout)
+    return True
+
+
+def _scale(color, factor):
+    return tuple(int(c * factor) for c in color)
+
+
+def _send(background, start=0, count=0, color=OFF):
+    """Update the strip. Returns False instead of raising, so missing hardware never breaks the site."""
+    line = "S {} {} {} {} {} {} {} {}\n".format(*background, start, count, *color)
+    with _lock:
+        try:
+            if not _open_port():
+                return False
+            _port.reset_input_buffer()
+            _port.write(line.encode())
+            if _port.readline().strip() == b"OK":
+                return True
+            print(f"LED: Arduino didn't confirm: {line.strip()}")
+        except (serial.SerialException, OSError) as e:
+            print(f"LED: serial error: {e}")
+        _close_port()  # Reconnect on the next command, in case it was unplugged
         return False
 
+
+def _glow_color():
+    if _ambient is None:
+        return OFF
+    return _scale(_ambient, get_led_brightness() / 100)
+
+
+def _start_new_scene():
+    """Whatever was showing is being replaced, so its pending timer must not fire."""
+    global _generation, _timer
+    _generation += 1
+    if _timer:
+        _timer.cancel()
+        _timer = None
+
+
+def set_ambient(color=None):
+    """Glow the whole strip in color at the saved brightness, or turn it off with None."""
+    global _ambient
+    with _lock:
+        _start_new_scene()
+        _ambient = color
+        return _send(_glow_color())
+
+
+def get_ambient():
+    return _ambient
+
+
+def show_spot(led):
+    """Mark one spot on the shelf for SPOT_SECONDS, then go back to the glow."""
+    global _timer
+    start = max(0, min(LED_COUNT - SPOT_WIDTH, led - SPOT_WIDTH // 2))
+
+    def restore(generation):
+        with _lock:
+            if generation == _generation:
+                _send(_glow_color())
+
+    with _lock:
+        _start_new_scene()
+        ok = _send(_scale(_glow_color(), GLOW_BEHIND_SPOT), start, SPOT_WIDTH, SPOT_COLOR)
+        _timer = threading.Timer(SPOT_SECONDS, restore, args=(_generation,))
+        _timer.daemon = True
+        _timer.start()
+        return ok
+
+
+def dominant_color(image):
+    """The most eye-catching main color of an image, at full strength so it shows up on LEDs."""
+    palette = image.convert("RGB").resize((64, 64)).quantize(8).convert("RGB")
+    best_score, best_hue, best_saturation = 0, 0, 0
+    for pixels, (r, g, b) in palette.getcolors():
+        hue, saturation, value = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        score = pixels * saturation * value
+        if score > best_score:
+            best_score, best_hue, best_saturation = score, hue, saturation
+    if best_saturation < 0.2:
+        return WARM_WHITE
+    return tuple(round(c * 255) for c in colorsys.hsv_to_rgb(best_hue, best_saturation, 1))
+
+
+def cover_color(url):
+    """Color for a cover image URL, or warm white if it can't be loaded."""
+    try:
+        response = requests.get(url, headers={"User-Agent": "VinylPi/1.0"}, timeout=5)
+        response.raise_for_status()
+        return dominant_color(Image.open(io.BytesIO(response.content)))
+    except (requests.RequestException, OSError) as e:
+        print(f"LED: couldn't read cover {url!r}: {e}")
+        return WARM_WHITE
+
+
+if __name__ == "__main__":
+    # Self-check: python led_controller.py
+    half_red = Image.new("RGB", (64, 64), (10, 10, 10))
+    half_red.paste((200, 20, 20), (0, 0, 64, 32))
+    r, g, b = dominant_color(half_red)
+    assert r == 255 and g < 60 and b < 60, (r, g, b)
+    assert dominant_color(Image.new("RGB", (64, 64), (128, 128, 128))) == WARM_WHITE
+    assert dominant_color(Image.new("RGB", (64, 64), (0, 0, 0))) == WARM_WHITE
+    assert _scale((255, 100, 0), 0.5) == (127, 50, 0)
+    assert cover_color("") == WARM_WHITE
+
+    class FakePort:
+        def __init__(self, replies):
+            self.replies, self.lines = list(replies), []
+        def readline(self):
+            return self.replies.pop(0)
+        def reset_input_buffer(self):
+            pass
+        def write(self, data):
+            self.lines.append(data.decode())
+        def close(self):
+            pass
+
+    get_led_brightness = lambda: 50
+    _port = fake = FakePort([b"OK\r\n", b"OK\r\n", b"ERR\r\n"])
+    assert set_ambient((200, 100, 0))
+    assert fake.lines[-1] == "S 100 50 0 0 0 0 0 0\n"
+    assert show_spot(0)  # Clamped to the start of the strip, with the glow dimmed behind it
+    assert fake.lines[-1] == "S 15 7 0 0 3 255 255 255\n"
+    assert not show_spot(LED_COUNT - 1) and fake.lines[-1].split()[4] == str(LED_COUNT - SPOT_WIDTH)
+    assert _port is None  # A bad reply drops the port so the next command reconnects
+    _timer.cancel()
+    print("led_controller self-check OK")

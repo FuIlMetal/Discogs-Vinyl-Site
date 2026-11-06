@@ -1,141 +1,81 @@
-# LED Strip Setup Guide
+# Shelf LED Setup
 
-This guide covers the setup and troubleshooting for the WS2812B LED strip integration.
+An Arduino Uno drives a WS2812B strip under the shelf above the records. The Pi sends it commands over USB.
 
-## Hardware Setup
+- **Find on Shelf** on any record lights its spot for 60 seconds.
+- **Let's Play This** glows the whole strip in the album cover's color.
+- **✕ on the Now Spinning banner** turns off the glow and lights where the record goes back.
+- **/admin** (Tailscale only) has on/off, color and brightness controls, the shelf order, and spot checking.
 
-### LED Strip Specifications
-- **Type**: WS2812B (144 LEDs/m, 1 meter = 144 LEDs total)
-- **Voltage**: 5V DC
-- **Data Protocol**: Single-wire addressable
+## Parts
 
-### Wiring
+- WS2812B strip, 5V, 144 LEDs/m, 1 m, non-waterproof (IP30). Cut to 28in, about 102 LEDs, on the marked line across the copper pads.
+- 5V 10A power supply, with a screw terminal adapter that fits its plug
+- 470–1000 µF capacitor, rated 6.3V or higher
+- 330–470 Ω resistor
+- Aluminum channel with a diffuser, for mounting
 
-Connect your LED strip to the Raspberry Pi:
+## Wiring
 
-1. **Power Supply** (External 5V):
-   - **VCC (Red)** → 5V power supply positive
-   - **GND (Black/White)** → Ground (shared between Pi and power supply)
+⚠️ Never connect the Uno's 5V pin to the strip or the power supply. Two 5V sources can damage the Uno and the Pi.
 
-2. **Data Line**:
-   - **DIN (Green)** → **Physical Pin 19** on Raspberry Pi (GPIO 10)
+| From | To |
+|---|---|
+| Supply + | Strip 5V |
+| Supply − | Strip GND **and** Uno GND |
+| Uno pin 6 | Resistor, then strip DIN (resistor close to the strip) |
+| Capacitor + and − | Strip 5V and GND, at the supply end. Match the polarity. |
+| Uno USB | Pi USB port, which powers the Uno |
 
-3. **Important**: 
-   - Use an external 5V power supply (not the Pi's 5V pin)
-   - Connect Pi ground to power supply ground
-   - For reliability, consider using a logic level shifter (3.3V Pi → 5V LEDs), though many setups work without one
+Data only flows one way, so connect to the end where the strip's arrows point away. Mount that end on the left, so LED 0 is the far left of the shelf.
 
-### GPIO Pin Reference
-- **GPIO 10** = Physical Pin 19
-- This is SPI0 MOSI, recommended for WS2812B LEDs
+## Mounting
 
-## Software Setup
+Fix the channel near the front edge of the underside of the shelf above, so the light lands on the spines. Keep boxes and anything else off the tops of the records, because they block the light.
 
-### 1. Install rpi-ws281x Library
+## Flash the Arduino
 
-```bash
-# Activate your virtual environment
-source venv/bin/activate
+From any computer with the [Arduino IDE](https://www.arduino.cc/en/software):
 
-# Install the library
-pip install rpi-ws281x
-```
+1. Install the **FastLED** library (Tools → Manage Libraries).
+2. Open `arduino/vinyl_leds/vinyl_leds.ino`.
+3. Select **Arduino Uno**, then upload.
 
-### 2. GPIO Permissions
+## Set up the Pi
 
-The service may need GPIO access. If LEDs don't work, try:
-
-```bash
-# Add your user to the gpio group
-sudo usermod -a -G gpio pi
-
-# Or run the service as root (less secure, but works)
-# Edit the service file:
-sudo nano /etc/systemd/system/discogs-vinyl-site.service
-# Change User=pi to User=root
-```
-
-### 3. Verify Installation
-
-After deployment, test the LEDs:
+Plug the Uno into the Pi, then let the service use the serial port. This only needs doing once:
 
 ```bash
-# Check diagnostics
-curl http://localhost:8080/api/leds/diagnostics
-
-# Test LEDs
-curl -X POST http://localhost:8080/api/leds/test
+sudo usermod -aG dialout fullmetal
+sudo systemctl restart discogs-vinyl-site.service
 ```
 
-## Configuration
+The auto-updater installs the Python packages. No nginx change is needed.
 
-LED settings are in `led_controller.py`:
+## Sort and check the shelf
 
-- `LED_COUNT = 144` - Number of LEDs (adjust if your strip is different)
-- `LED_PIN = 10` - GPIO pin (10 = SPI0 MOSI, physical pin 19)
-- `LED_BRIGHTNESS = 77` - Default brightness (77 = ~30% of 255)
+1. Open `/admin`. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
+2. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
+3. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
+4. Tap any record to check where its light lands.
+
+Order is by the artist name exactly as Discogs writes it, the same as the home page, so The Beatles file under T and Miles Davis under M.
+
+If you cut the strip to a different length, change `LED_COUNT` in `led_controller.py`.
+
+## Self-checks
+
+```bash
+venv/bin/python shelf.py
+venv/bin/python led_controller.py
+```
 
 ## Troubleshooting
 
-### LEDs Not Working
+"The shelf lights aren't connected" means the site can't talk to the Uno:
 
-1. **Check Diagnostics Endpoint**:
-   ```
-   http://your-pi-ip/api/leds/diagnostics
-   ```
-   This will show:
-   - Library installation status
-   - Raspberry Pi detection
-   - Initialization status
-   - Configuration details
-   - Specific error messages
+- Run `ls /dev/ttyACM* /dev/ttyUSB*` to check that the Pi can see the Uno.
+- Run `groups fullmetal` to check for `dialout`, then restart the service.
+- Run `sudo journalctl -u discogs-vinyl-site.service -n 50` and look for lines starting `LED:`.
 
-2. **Check Service Logs**:
-   ```bash
-   sudo journalctl -u discogs-vinyl-site.service -f
-   ```
-   Look for "DEBUG:" messages that show what's happening.
-
-3. **Common Issues**:
-
-   - **Library not installed**: 
-     ```bash
-     pip install rpi-ws281x
-     ```
-
-   - **GPIO permissions**: 
-     ```bash
-     sudo usermod -a -G gpio pi
-     sudo systemctl restart discogs-vinyl-site.service
-     ```
-
-   - **Wrong GPIO pin**: 
-     - Verify physical pin 19 is connected to LED data line
-     - Check `LED_PIN` in `led_controller.py`
-
-   - **Hardware connection**:
-     - Verify data line is on physical pin 19 (GPIO 10)
-     - Check power supply is adequate (144 LEDs need ~8.6A at full brightness)
-     - Ensure proper ground connection
-
-   - **DMA channel conflict**:
-     - Try changing `LED_DMA` in `led_controller.py` (try 5 or 6)
-
-### Testing LEDs
-
-1. **Via Web Interface**: Click "Let's Play This" on any record
-2. **Via API**: 
-   ```bash
-   curl -X POST http://localhost:8080/api/leds/test
-   ```
-3. **Check Browser Console**: Open browser dev tools (F12) and check console for LED status
-
-## Deployment Checklist
-
-After pulling new code:
-
-1. ✅ Run `./deploy.sh` (or manually: install deps, restart service)
-2. ✅ Check service is running: `sudo systemctl status discogs-vinyl-site.service`
-3. ✅ Test LEDs: Visit diagnostics endpoint or click "Let's Play This"
-4. ✅ Check logs if issues: `sudo journalctl -u discogs-vinyl-site.service -n 50`
-
+If the site says the lights are working but nothing lights up, check the shared ground, the supply, and that data goes into DIN and not DOUT.

@@ -105,7 +105,56 @@ def init_db():
             UNIQUE(artist, track_name)
         )
     """)
-    
+
+    # LED spots confirmed by hand on the admin page; records between them are estimated
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS shelf_anchors (
+            release_id INTEGER PRIMARY KEY,
+            led INTEGER NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS led_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            brightness INTEGER NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def get_shelf_anchors():
+    """Hand-confirmed LED spots as {release_id: led}"""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT release_id, led FROM shelf_anchors").fetchall()
+    conn.close()
+    return dict(rows)
+
+
+def set_shelf_anchor(release_id: int, led: int):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT OR REPLACE INTO shelf_anchors (release_id, led) VALUES (?, ?)", (release_id, led))
+    conn.commit()
+    conn.close()
+
+
+def get_led_brightness():
+    """Saved glow brightness as a percentage"""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT brightness FROM led_settings WHERE id = 1").fetchone()
+    conn.close()
+    return row[0] if row else 30
+
+
+def set_led_brightness(percent: int):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("INSERT OR REPLACE INTO led_settings (id, brightness) VALUES (1, ?)", (percent,))
     conn.commit()
     conn.close()
 
@@ -618,8 +667,10 @@ def delete_collection_instance(username: str, token: str, folder_id: int, releas
 
 
 def forget_release(release_id: int):
-    """Drop a release's cached details so a re-add fetches fresh data"""
+    """Drop a release's cached details and shelf spot so a re-add starts fresh"""
+    init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM releases WHERE release_id = ?", (release_id,))
+    conn.execute("DELETE FROM shelf_anchors WHERE release_id = ?", (release_id,))
     conn.commit()
     conn.close()

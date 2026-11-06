@@ -1,4 +1,5 @@
 import os
+import threading
 import requests
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
@@ -20,7 +21,8 @@ from discogs_api import (
     cache_release,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
-from led_controller import set_all_leds, init_led_strip, get_led_diagnostics, clear_leds
+from led_controller import cover_color, set_ambient, show_spot
+from shelf import spot_for, thumb_for
 from admin import admin
 
 # Load environment variables from .env file
@@ -130,6 +132,18 @@ def index():
 
     return render_template("index.html", collection=collection, genres=sorted_genres)
 
+def glow_for_record(release_id):
+    """Glow the shelf in the record's cover color. Runs in the background because the image fetch is slow."""
+    try:
+        thumb = thumb_for(release_id)
+    except requests.RequestException as e:
+        print(f"LED: couldn't look up cover for {release_id}: {e}")
+        thumb = ""
+    color = cover_color(thumb)
+    if get_current_record() == release_id:  # It may have been cleared during the fetch
+        set_ambient(color)
+
+
 @app.route("/api/play_count", methods=["POST"])
 def update_play_count_api():
     """API endpoint to update play count"""
@@ -152,6 +166,7 @@ def update_play_count_api():
     # If this was a positive spin, mark as current record (both last played + now playing)
     if delta and delta > 0:
         set_current_record(release_id)
+        threading.Thread(target=glow_for_record, args=(release_id,), daemon=True).start()
 
     current_id = get_current_record()
 
@@ -207,16 +222,45 @@ def add_to_collection_api():
 def clear_now_playing_api():
     """
     Explicitly clear the 'now playing' state (e.g., record finished and put away).
-    We keep track of the last played record separately for LEDs/shelving.
+    The glow goes off and the shelf lights up where the record goes back.
     """
+    was_playing = get_current_record()
     clear_now_playing()
+    set_ambient(None)
+    if was_playing:
+        try:
+            led = spot_for(was_playing)
+            if led is not None:
+                show_spot(led)
+        except requests.RequestException as e:
+            print(f"LED: couldn't look up shelf spot for {was_playing}: {e}")
     last_played_id = get_last_played()
     return jsonify({"current_record_id": None, "last_played_id": last_played_id})
 
 
+@app.route("/api/leds/locate", methods=["POST"])
+def locate_record():
+    """Light up where a record lives on the shelf. Public: anyone at the shelf can use Find."""
+    data = request.get_json(silent=True) or {}
+    try:
+        release_id = int(data["release_id"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "release_id must be an integer"}), 400
+
+    try:
+        led = spot_for(release_id)
+    except requests.RequestException as e:
+        return jsonify({"error": f"Couldn't load the collection: {e}"}), 502
+    if led is None:
+        return jsonify({"error": "That record isn't in the collection"}), 404
+    if not show_spot(led):
+        return jsonify({"error": "The shelf lights aren't connected"}), 503
+    return jsonify({"led": led})
+
+
 @app.route("/api/last_played", methods=["GET"])
 def last_played_api():
-    """Small helper endpoint for LED controller to know where the last record belongs."""
+    """The most recently played record, kept after it's cleared."""
     last_played_id = get_last_played()
     if last_played_id is None:
         return jsonify({"last_played_id": None})
@@ -240,61 +284,6 @@ def get_lyrics_api():
         return jsonify({"error": "Lyrics not available"}), 404
     
     return jsonify({"lyrics": lyrics})
-
-@app.route("/api/leds/test", methods=["POST"])
-def test_leds():
-    """API endpoint to test LEDs - sets all LEDs to 30% brightness"""
-    try:
-        print("DEBUG: /api/leds/test endpoint called")
-        success = set_all_leds(brightness_percent=30)
-        if success:
-            print("DEBUG: LED test successful")
-            return jsonify({"status": "success", "message": "LEDs triggered"})
-        else:
-            print("DEBUG: LED test failed - strip not available or initialization failed")
-            diagnostics = get_led_diagnostics()
-            return jsonify({
-                "status": "error", 
-                "message": "LED strip not available or initialization failed",
-                "diagnostics": diagnostics
-            }), 500
-    except Exception as e:
-        print(f"DEBUG: Exception in test_leds: {e}")
-        import traceback
-        traceback.print_exc()
-        diagnostics = get_led_diagnostics()
-        return jsonify({
-            "status": "error", 
-            "message": str(e),
-            "diagnostics": diagnostics
-        }), 500
-
-@app.route("/api/leds/clear", methods=["POST"])
-def clear_leds_api():
-    """API endpoint to turn off all LEDs"""
-    try:
-        print("DEBUG: /api/leds/clear endpoint called")
-        success = clear_leds()
-        if success:
-            print("DEBUG: LEDs cleared successfully")
-            return jsonify({"status": "success", "message": "LEDs turned off"})
-        else:
-            print("DEBUG: Failed to clear LEDs - strip not initialized")
-            return jsonify({"status": "error", "message": "LED strip not initialized"}), 500
-    except Exception as e:
-        print(f"DEBUG: Exception in clear_leds_api: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/api/leds/diagnostics", methods=["GET"])
-def led_diagnostics():
-    """API endpoint to get LED diagnostic information"""
-    try:
-        diagnostics = get_led_diagnostics()
-        return jsonify({"status": "success", "diagnostics": diagnostics})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     # Allow port to be configured via environment variable (default to 8080 for non-root)
