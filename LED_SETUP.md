@@ -2,10 +2,10 @@
 
 An Arduino Uno drives a WS2812B strip under the shelf above the records. The Pi sends it commands over USB.
 
-- **Find on Shelf** on any record lights its spot for 60 seconds.
-- **Let's Play This** glows the whole strip in the album cover's color.
-- **✕ on the Now Spinning banner** turns off the glow and lights where the record goes back.
-- **/admin** (Tailscale only) has on/off, color and brightness controls, the shelf order, and spot checking.
+- **Find on Shelf** turns off all other lights for 60 seconds and lights the record's spot in white. The last played record's spot lights in orange, showing where it goes back.
+- **✕ on the Now Spinning banner** lights where the record goes back in orange.
+- **Album glow** is off by default. Turn it on in `/admin` to make the strip glow in the cover's color while a record plays.
+- **/admin** (Tailscale only) has on/off, color, brightness and album glow controls, the shelf order, and spot checking.
 
 ## Parts
 
