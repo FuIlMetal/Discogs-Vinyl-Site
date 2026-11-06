@@ -1,6 +1,7 @@
 """Private admin pages. Only reachable over Tailscale (nginx blocks everyone else; require_admin is the backup)."""
 import ipaddress
 import os
+import re
 from datetime import datetime
 from functools import wraps
 
@@ -14,8 +15,14 @@ from discogs_api import (
     get_collection,
     get_collection_folders,
     get_collection_value,
+    get_led_brightness,
     get_marketplace_stats,
+    get_shelf_anchors,
+    set_led_brightness,
+    set_shelf_anchor,
 )
+from led_controller import LED_COUNT, get_ambient, set_ambient, show_spot
+from shelf import artist_name, current_positions, positions_for, shelf_ids
 
 admin = Blueprint("admin", __name__)
 
@@ -52,6 +59,7 @@ def inject_is_admin():
 
 
 SORT_KEYS = {
+    "shelf": lambda r: r["shelf"],
     "artist": lambda r: r["artist"].lower(),
     "title": lambda r: r["title"].lower(),
     "year": lambda r: r["year"] or 0,
@@ -77,15 +85,22 @@ def admin_page():
     except requests.RequestException as e:
         errors.append(f"Couldn't load collection value: {e}")
 
+    shelf_numbers = {release_id: i + 1 for i, release_id in enumerate(shelf_ids(releases))}
+    positions = positions_for(releases)
+    anchors = get_shelf_anchors()
+
     records = []
     for item in releases:
         basic = item.get("basic_information", {})
         formats = basic.get("formats") or [{}]
         records.append({
             "id": basic.get("id"),
+            "shelf": shelf_numbers.get(basic.get("id"), 0),
+            "led": positions.get(basic.get("id"), 0),
+            "pinned": basic.get("id") in anchors,
             "instance_id": item.get("instance_id"),
             "folder_id": item.get("folder_id"),
-            "artist": ", ".join(a["name"] for a in basic.get("artists", [])),
+            "artist": artist_name(basic),
             "title": basic.get("title", ""),
             "year": basic.get("year") or None,
             "format": formats[0].get("name", ""),
@@ -99,14 +114,15 @@ def admin_page():
         q = search.lower()
         records = [r for r in records if q in r["artist"].lower() or q in r["title"].lower()]
 
-    sort = request.args.get("sort", "artist")
+    sort = request.args.get("sort", "shelf")
     if sort not in SORT_KEYS:
-        sort = "artist"
+        sort = "shelf"
     desc = request.args.get("dir") == "desc"
     records.sort(key=SORT_KEYS[sort], reverse=desc)
 
     return render_template("admin.html", records=records, total=len(releases), value=value,
-                           errors=errors, search=search, sort=sort, desc=desc)
+                           errors=errors, search=search, sort=sort, desc=desc,
+                           led_count=LED_COUNT, brightness=get_led_brightness())
 
 
 @admin.route("/api/admin/price/<int:release_id>")
@@ -140,6 +156,72 @@ def delete_record():
     print(f"{datetime.now().isoformat(timespec='seconds')} ADMIN DELETE release={release_id} "
           f"instance={instance_id} folder={folder_id} by {client_ip()}")
     return jsonify({"deleted": release_id})
+
+
+def parse_led(value):
+    """An LED number from JSON, or None if it isn't one on the strip."""
+    if type(value) is not int or not 0 <= value < LED_COUNT:
+        return None
+    return value
+
+
+@admin.route("/api/admin/leds", methods=["POST"])
+@require_admin
+def set_lights():
+    """Lights on in a color ({"color": "#rrggbb"}), off ({"off": true}), and/or {"brightness": 0-100}."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    data = request.get_json(silent=True) or {}
+
+    color = get_ambient()
+    if "color" in data:
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(data["color"])):
+            return jsonify({"error": "color must look like #rrggbb"}), 400
+        color = tuple(bytes.fromhex(data["color"][1:]))
+    if "brightness" in data:
+        brightness = data["brightness"]
+        if type(brightness) is not int or not 0 <= brightness <= 100:
+            return jsonify({"error": "brightness must be a whole number from 0 to 100"}), 400
+        set_led_brightness(brightness)
+    if data.get("off"):
+        color = None
+
+    if not set_ambient(color):
+        return jsonify({"error": "The shelf lights aren't connected"}), 503
+    return jsonify({"on": color is not None, "brightness": get_led_brightness()})
+
+
+@admin.route("/api/admin/leds/show", methods=["POST"])
+@require_admin
+def show_led():
+    """Light any LED, so a spot can be nudged into place before saving it."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    led = parse_led((request.get_json(silent=True) or {}).get("led"))
+    if led is None:
+        return jsonify({"error": f"led must be a whole number from 0 to {LED_COUNT - 1}"}), 400
+    if not show_spot(led):
+        return jsonify({"error": "The shelf lights aren't connected"}), 503
+    return jsonify({"led": led})
+
+
+@admin.route("/api/admin/shelf/spot", methods=["POST"])
+@require_admin
+def save_spot():
+    """Pin a record to an LED. Estimated records around it shift, so send every position back."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    data = request.get_json(silent=True) or {}
+    release_id, led = data.get("release_id"), parse_led(data.get("led"))
+    if type(release_id) is not int or led is None:
+        return jsonify({"error": f"release_id must be an integer and led from 0 to {LED_COUNT - 1}"}), 400
+
+    set_shelf_anchor(release_id, led)
+    try:
+        positions = current_positions()
+    except requests.RequestException as e:
+        return jsonify({"error": f"Saved, but couldn't refresh the other spots: {e}"}), 502
+    return jsonify({"positions": positions})
 
 
 if __name__ == "__main__":

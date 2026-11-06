@@ -38,6 +38,10 @@
       .admin-dialog-actions { display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; }
       .danger-btn { padding: 12px 16px; border-radius: 12px; border: none; background: #c0392b; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
       .danger-btn:disabled { opacity: 0.6; cursor: wait; }
+      .admin-lights { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+      .admin-lights label { display: flex; align-items: center; gap: 8px; }
+      .admin-lights input[type="range"] { width: 140px; max-width: 100%; }
+      .admin-spot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
     </style>
 </head>
 <body>
@@ -62,6 +66,15 @@
     </div>
     {% endif %}
 
+    <section class="admin-lights" aria-label="Shelf lights">
+      <strong>Shelf lights</strong>
+      <label>Color <input type="color" id="lightColor" value="#ffaa5a"></label>
+      <label>Brightness <input type="range" id="lightBrightness" min="0" max="100" value="{{ brightness }}"></label>
+      <button class="random-btn" id="lightOn" type="button">On</button>
+      <button class="random-btn" id="lightOff" type="button">Off</button>
+      <span id="lightStatus" aria-live="polite"></span>
+    </section>
+
     <form class="admin-search" method="get">
       <input type="search" name="search" value="{{ search }}" placeholder="Search artist or title" aria-label="Search records">
       <input type="hidden" name="sort" value="{{ sort }}">
@@ -69,7 +82,7 @@
       <button class="random-btn" type="submit">Search</button>
     </form>
 
-    <p><span id="shownCount">{{ records|length }}</span> of <span id="totalCount">{{ total }}</span> records · tap a row for details</p>
+    <p><span id="shownCount">{{ records|length }}</span> of <span id="totalCount">{{ total }}</span> records · tap a row to light its spot and see details · # is its place on the shelf, left to right</p>
 
     {% macro col(key, label, cls='') -%}
       {%- set next_dir = 'asc' if (sort == key and desc) else ('desc' if sort == key else 'asc') -%}
@@ -82,6 +95,7 @@
       <table class="admin-table">
         <thead>
           <tr>
+            {{ col('shelf', '#') }}
             {{ col('artist', 'Artist') }}
             {{ col('title', 'Title') }}
             {{ col('year', 'Year') }}
@@ -94,6 +108,7 @@
         <tbody>
           {% for r in records %}
           <tr tabindex="0" data-record='{{ r|tojson }}'>
+            <td class="num">{{ r.shelf }}</td>
             <td class="clip">{{ r.artist }}</td>
             <td class="clip">{{ r.title }}</td>
             <td>{{ r.year or '' }}</td>
@@ -111,6 +126,12 @@
   <dialog id="recordDialog" class="admin-dialog" aria-labelledby="dlgTitle">
     <h2 id="dlgTitle"></h2>
     <p class="artist" id="dlgArtist"></p>
+    <p id="dlgSpot" aria-live="polite"></p>
+    <div class="admin-spot">
+      <button class="random-btn" id="spotLeft" type="button" aria-label="Move light left">◀</button>
+      <button class="random-btn" id="spotRight" type="button" aria-label="Move light right">▶</button>
+      <button class="random-btn" id="spotSave" type="button">Save spot</button>
+    </div>
     <dl>
       <dt>Year</dt><dd id="dlgYear"></dd>
       <dt>Format</dt><dd id="dlgFormat"></dd>
@@ -131,10 +152,40 @@
     const dialog = document.getElementById("recordDialog");
     const $ = id => document.getElementById(id);
     let currentRow = null;
+    let spotLed = 0;
+    const LED_COUNT = {{ led_count }};
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Request failed");
+      return d;
+    }
+
+    function describeSpot(r, led, note) {
+      const kind = led === r.led && r.pinned ? "saved" : (led === r.led ? "estimated" : "not saved yet");
+      $("dlgSpot").textContent = `Shelf #${r.shelf} · LED ${led} (${kind})${note ? " · " + note : ""}`;
+    }
+
+    async function lightSpot(led) {
+      const r = JSON.parse(currentRow.dataset.record);
+      spotLed = led;
+      describeSpot(r, led);
+      try {
+        await postJson("/api/admin/leds/show", { led });
+      } catch (err) {
+        describeSpot(r, led, err.message);
+      }
+    }
 
     function openRecord(row) {
       const r = JSON.parse(row.dataset.record);
       currentRow = row;
+      lightSpot(r.led);
       $("dlgTitle").textContent = r.title;
       $("dlgArtist").textContent = r.artist;
       $("dlgYear").textContent = r.year || "—";
@@ -165,6 +216,39 @@
       row.addEventListener("click", () => openRecord(row));
       row.addEventListener("keydown", e => { if (e.key === "Enter") openRecord(row); });
     });
+
+    $("spotLeft").addEventListener("click", () => { if (spotLed > 0) lightSpot(spotLed - 1); });
+    $("spotRight").addEventListener("click", () => { if (spotLed < LED_COUNT - 1) lightSpot(spotLed + 1); });
+
+    $("spotSave").addEventListener("click", async () => {
+      const saved = JSON.parse(currentRow.dataset.record);
+      try {
+        const d = await postJson("/api/admin/shelf/spot", { release_id: saved.id, led: spotLed });
+        document.querySelectorAll(".admin-table tbody tr").forEach(row => {
+          const r = JSON.parse(row.dataset.record);
+          if (r.id in d.positions) r.led = d.positions[r.id];
+          if (r.id === saved.id) r.pinned = true;
+          row.dataset.record = JSON.stringify(r);
+        });
+        describeSpot(JSON.parse(currentRow.dataset.record), spotLed);
+      } catch (err) {
+        describeSpot(saved, spotLed, err.message);
+      }
+    });
+
+    async function setLights(body) {
+      $("lightStatus").textContent = "";
+      try {
+        const d = await postJson("/api/admin/leds", body);
+        $("lightStatus").textContent = d.on ? "On" : "Off";
+      } catch (err) {
+        $("lightStatus").textContent = err.message;
+      }
+    }
+    $("lightOn").addEventListener("click", () => setLights({ color: $("lightColor").value }));
+    $("lightOff").addEventListener("click", () => setLights({ off: true }));
+    $("lightColor").addEventListener("change", () => setLights({ color: $("lightColor").value }));
+    $("lightBrightness").addEventListener("change", () => setLights({ brightness: Number($("lightBrightness").value) }));
 
     $("dlgClose").addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });  // tap outside closes

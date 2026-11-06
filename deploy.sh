@@ -61,5 +61,5 @@ echo ""
 echo "💡 Useful commands:"
 echo "   View logs: sudo journalctl -u discogs-vinyl-site.service -f"
 echo "   Check status: sudo systemctl status discogs-vinyl-site.service"
-echo "   Test LEDs: curl -X POST http://localhost:8080/api/leds/test"
+echo "   Test LEDs: curl -X POST -H 'Content-Type: application/json' -d '{\"color\":\"#ffffff\"}' http://localhost:8080/api/admin/leds"
 
