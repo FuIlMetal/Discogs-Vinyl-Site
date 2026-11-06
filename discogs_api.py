@@ -117,9 +117,13 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS led_settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
-            brightness INTEGER NOT NULL
+            brightness INTEGER NOT NULL,
+            album_glow INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # Databases from before the album glow switch don't have this column yet
+    if "album_glow" not in [row[1] for row in cursor.execute("PRAGMA table_info(led_settings)")]:
+        cursor.execute("ALTER TABLE led_settings ADD COLUMN album_glow INTEGER NOT NULL DEFAULT 0")
 
     conn.commit()
     conn.close()
@@ -151,12 +155,30 @@ def get_led_brightness():
     return row[0] if row else 30
 
 
-def set_led_brightness(percent: int):
+def _save_led_setting(column: str, value: int):
     init_db()
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT OR REPLACE INTO led_settings (id, brightness) VALUES (1, ?)", (percent,))
+    conn.execute("INSERT OR IGNORE INTO led_settings (id, brightness) VALUES (1, 30)")
+    conn.execute(f"UPDATE led_settings SET {column} = ? WHERE id = 1", (value,))
     conn.commit()
     conn.close()
+
+
+def set_led_brightness(percent: int):
+    _save_led_setting("brightness", percent)
+
+
+def get_album_glow():
+    """Whether the shelf glows in the cover color while a record plays. Off unless turned on in admin."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT album_glow FROM led_settings WHERE id = 1").fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+
+def set_album_glow(enabled: bool):
+    _save_led_setting("album_glow", int(enabled))
 
 
 def set_current_record(release_id: int):

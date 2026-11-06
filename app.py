@@ -19,10 +19,11 @@ from discogs_api import (
     get_release_instance,
     get_release_tracks,
     cache_release,
+    get_album_glow,
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
-from led_controller import cover_color, set_ambient, show_spot
-from shelf import spot_for, thumb_for
+from led_controller import set_ambient, show_spots
+from shelf import glow_for_record, spot_for
 from admin import admin
 
 # Load environment variables from .env file
@@ -132,18 +133,6 @@ def index():
 
     return render_template("index.html", collection=collection, genres=sorted_genres)
 
-def glow_for_record(release_id):
-    """Glow the shelf in the record's cover color. Runs in the background because the image fetch is slow."""
-    try:
-        thumb = thumb_for(release_id)
-    except requests.RequestException as e:
-        print(f"LED: couldn't look up cover for {release_id}: {e}")
-        thumb = ""
-    color = cover_color(thumb)
-    if get_current_record() == release_id:  # It may have been cleared during the fetch
-        set_ambient(color)
-
-
 @app.route("/api/play_count", methods=["POST"])
 def update_play_count_api():
     """API endpoint to update play count"""
@@ -166,7 +155,8 @@ def update_play_count_api():
     # If this was a positive spin, mark as current record (both last played + now playing)
     if delta and delta > 0:
         set_current_record(release_id)
-        threading.Thread(target=glow_for_record, args=(release_id,), daemon=True).start()
+        if get_album_glow():
+            threading.Thread(target=glow_for_record, args=(release_id,), daemon=True).start()
 
     current_id = get_current_record()
 
@@ -222,16 +212,17 @@ def add_to_collection_api():
 def clear_now_playing_api():
     """
     Explicitly clear the 'now playing' state (e.g., record finished and put away).
-    The glow goes off and the shelf lights up where the record goes back.
+    Any album glow goes off and the shelf lights up where the record goes back.
     """
     was_playing = get_current_record()
     clear_now_playing()
-    set_ambient(None)
+    if get_album_glow():  # With the glow switched off, any light on is one set by hand in admin, so leave it
+        set_ambient(None)
     if was_playing:
         try:
             led = spot_for(was_playing)
             if led is not None:
-                show_spot(led)
+                show_spots(put_away=led)
         except requests.RequestException as e:
             print(f"LED: couldn't look up shelf spot for {was_playing}: {e}")
     last_played_id = get_last_played()
@@ -240,22 +231,24 @@ def clear_now_playing_api():
 
 @app.route("/api/leds/locate", methods=["POST"])
 def locate_record():
-    """Light up where a record lives on the shelf. Public: anyone at the shelf can use Find."""
+    """Light a record's spot in white and the last played record's spot in orange. Public: anyone at the shelf can use Find."""
     data = request.get_json(silent=True) or {}
     try:
         release_id = int(data["release_id"])
     except (KeyError, TypeError, ValueError):
         return jsonify({"error": "release_id must be an integer"}), 400
 
+    last_played_id = get_last_played()
     try:
         led = spot_for(release_id)
+        put_away_led = spot_for(last_played_id) if last_played_id and last_played_id != release_id else None
     except requests.RequestException as e:
         return jsonify({"error": f"Couldn't load the collection: {e}"}), 502
     if led is None:
         return jsonify({"error": "That record isn't in the collection"}), 404
-    if not show_spot(led):
+    if not show_spots(find=led, put_away=put_away_led):
         return jsonify({"error": "The shelf lights aren't connected"}), 503
-    return jsonify({"led": led})
+    return jsonify({"led": led, "put_away_id": last_played_id if put_away_led is not None else None})
 
 
 @app.route("/api/last_played", methods=["GET"])

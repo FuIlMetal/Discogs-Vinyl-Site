@@ -72,6 +72,7 @@
       <label>Brightness <input type="range" id="lightBrightness" min="0" max="100" value="{{ brightness }}"></label>
       <button class="random-btn" id="lightOn" type="button">On</button>
       <button class="random-btn" id="lightOff" type="button">Off</button>
+      <label><input type="checkbox" id="albumGlow"{% if album_glow %} checked{% endif %}> Glow in the album's color while playing</label>
       <span id="lightStatus" aria-live="polite"></span>
     </section>
 
@@ -240,7 +241,9 @@
       $("lightStatus").textContent = "";
       try {
         const d = await postJson("/api/admin/leds", body);
-        $("lightStatus").textContent = d.on ? "On" : "Off";
+        $("lightStatus").textContent = "album_glow" in body
+          ? `Album glow ${d.album_glow ? "on" : "off"}`
+          : (d.on ? "On" : "Off");
       } catch (err) {
         $("lightStatus").textContent = err.message;
       }
@@ -249,6 +252,7 @@
     $("lightOff").addEventListener("click", () => setLights({ off: true }));
     $("lightColor").addEventListener("change", () => setLights({ color: $("lightColor").value }));
     $("lightBrightness").addEventListener("change", () => setLights({ brightness: Number($("lightBrightness").value) }));
+    $("albumGlow").addEventListener("change", () => setLights({ album_glow: $("albumGlow").checked }));
 
     $("dlgClose").addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });  // tap outside closes
