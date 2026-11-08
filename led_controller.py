@@ -68,8 +68,8 @@ def _send(background, ranges=((0, 0, OFF),)):
             if _port.readline().strip() == b"OK":
                 return True
             print(f"LED: Arduino didn't confirm: {line.strip()}")
-        except (serial.SerialException, OSError) as e:
-            print(f"LED: serial error: {e}")
+        except Exception as e:  # Not just SerialException: a vanished Uno can raise termios.error, which would 500 every Find until restart
+            print(f"LED: serial error: {e!r}")
         _close_port()  # Reconnect on the next command, in case it was unplugged
         return False
 
