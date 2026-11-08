@@ -5,9 +5,21 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:$PATH"
 
-if ! command -v arduino-cli >/dev/null; then
+CLI_VERSION=1.5.1
+# Pick by the OS, not the kernel: 32-bit Pi OS often runs on a 64-bit kernel, and 64-bit tools can't run there
+case "$(uname -m)/$(getconf LONG_BIT)" in
+    x86_64/64) ARCH=64bit ;;
+    aarch64/64) ARCH=ARM64 ;;
+    *) ARCH=ARMv7 ;;
+esac
+MARKER="$HOME/.local/bin/.arduino-cli-arch"
+if [ "$(cat "$MARKER" 2>/dev/null)" != "$CLI_VERSION/$ARCH" ]; then
+    # Also drops boards and tools downloaded for the wrong architecture by an earlier install
+    rm -rf "$HOME/.arduino15/packages" "$HOME/.local/bin/arduino-cli"
     mkdir -p "$HOME/.local/bin"
-    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$HOME/.local/bin" sh
+    curl -fsSL "https://downloads.arduino.cc/arduino-cli/arduino-cli_${CLI_VERSION}_Linux_${ARCH}.tar.gz" \
+        | tar -xz -C "$HOME/.local/bin" arduino-cli
+    echo "$CLI_VERSION/$ARCH" > "$MARKER"
 fi
 arduino-cli core update-index
 arduino-cli core install arduino:avr
