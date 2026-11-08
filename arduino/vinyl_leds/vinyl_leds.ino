@@ -6,7 +6,7 @@
 #include <FastLED.h>
 
 #define DATA_PIN 6
-#define MAX_LEDS 144          // Whole uncut 1m strip. The Pi decides how many are really in use.
+#define MAX_LEDS 300          // Must match LED_COUNT on the Pi. Fits the Uno's RAM; extra unused LEDs are harmless.
 #define MAX_MILLIAMPS 5000    // Stays well inside a 5V 10A supply and limits heat on the shelf.
 
 CRGB leds[MAX_LEDS];

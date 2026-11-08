@@ -65,7 +65,7 @@ The auto-updater installs the Python packages. No nginx change is needed.
 
 Order is by the artist name exactly as Discogs writes it, the same as the home page, so The Beatles file under T and Miles Davis under M.
 
-If you cut the strip to a different length, change `LED_COUNT` in `led_controller.py`.
+The site can address up to 300 LEDs. Set where your strip really starts and ends with the Find light settings in step 1. For a strip longer than 300, raise `LED_COUNT` in `led_controller.py` and `MAX_LEDS` in the sketch to match, then flash the Uno again.
 
 ## Self-checks
 

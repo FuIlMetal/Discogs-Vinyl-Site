@@ -10,7 +10,7 @@ from PIL import Image
 
 from discogs_api import get_led_brightness, get_led_settings
 
-LED_COUNT = 102      # LEDs in use: 28in of shelf on a 144 LEDs/m strip. Change this if you cut it differently.
+LED_COUNT = 300      # Most LEDs the site can address. Must match MAX_LEDS in the sketch. Set the real ends in /admin.
 BAUD_RATE = 115200   # Must match the sketch
 SPOT_WIDTH = 3       # LEDs lit to mark a record
 PUT_AWAY_COLOR = (255, 90, 0)  # Orange marks where the last played record goes back
