@@ -2,10 +2,10 @@
 
 An Arduino Uno drives a WS2812B strip under the shelf above the records. The Pi sends it commands over USB.
 
-- **Find on Shelf** on any record lights its spot for 60 seconds.
-- **Let's Play This** glows the whole strip in the album cover's color.
-- **✕ on the Now Spinning banner** turns off the glow and lights where the record goes back.
-- **/admin** (Tailscale only) has on/off, color and brightness controls, the shelf order, and spot checking.
+- **Find on Shelf** turns off all other lights and lights the record's spot (white for 60 seconds unless changed under **Find light** in `/admin`). The last played record's spot lights in orange, showing where it goes back.
+- **✕ on the Now Spinning banner** lights where the record goes back in orange.
+- **Album glow** is off by default. Turn it on in `/admin` to make the strip glow in the cover's color while a record plays.
+- **/admin** (Tailscale only) has on/off, color, brightness and album glow controls, the shelf order, and spot checking.
 
 ## Parts
 
@@ -35,11 +35,14 @@ Fix the channel near the front edge of the underside of the shelf above, so the 
 
 ## Flash the Arduino
 
-From any computer with the [Arduino IDE](https://www.arduino.cc/en/software):
+On the Pi, with the Uno plugged in:
 
-1. Install the **FastLED** library (Tools → Manage Libraries).
-2. Open `arduino/vinyl_leds/vinyl_leds.ino`.
-3. Select **Arduino Uno**, then upload.
+```bash
+cd ~/Vinyl-site/discogs-vinyl-site
+bash deploy/flash-arduino.sh
+```
+
+The first run installs `arduino-cli`, the Uno board files and FastLED, which takes a few minutes. The site pauses for the upload and starts again on its own. Run it again whenever the sketch changes.
 
 ## Set up the Pi
 
@@ -54,10 +57,11 @@ The auto-updater installs the Python packages. No nginx change is needed.
 
 ## Sort and check the shelf
 
-1. Open `/admin`. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
-2. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
-3. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
-4. Tap any record to check where its light lands.
+1. In `/admin` under **Find light**, step **Strip starts at LED** and **ends at LED** until the lit LED sits over the first and last record slot, then **Save**. Records without a saved spot stay inside that range.
+2. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
+3. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
+4. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
+5. Tap any record to check where its light lands.
 
 Order is by the artist name exactly as Discogs writes it, the same as the home page, so The Beatles file under T and Miles Davis under M.
 

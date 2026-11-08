@@ -72,7 +72,18 @@
       <label>Brightness <input type="range" id="lightBrightness" min="0" max="100" value="{{ brightness }}"></label>
       <button class="random-btn" id="lightOn" type="button">On</button>
       <button class="random-btn" id="lightOff" type="button">Off</button>
+      <label><input type="checkbox" id="albumGlow"{% if album_glow %} checked{% endif %}> Glow in the album's color while playing</label>
       <span id="lightStatus" aria-live="polite"></span>
+    </section>
+
+    <section class="admin-lights" aria-label="Find light and strip range">
+      <strong>Find light</strong>
+      <label>Color <input type="color" id="findColor" value="{{ led_settings.find_color }}"></label>
+      <label>Stays on <input type="number" id="spotSeconds" min="5" max="600" value="{{ led_settings.spot_seconds }}"> sec</label>
+      <label>Strip starts at LED <input type="number" id="firstLed" min="0" max="{{ led_count - 1 }}" value="{{ led_settings.first_led }}"></label>
+      <label>ends at LED <input type="number" id="lastLed" min="0" max="{{ led_count - 1 }}" value="{{ led_count - 1 if led_settings.last_led is none else led_settings.last_led }}"></label>
+      <button class="random-btn" id="saveLedSettings" type="button">Save</button>
+      <span id="ledSettingsStatus" aria-live="polite"></span>
     </section>
 
     <form class="admin-search" method="get">
@@ -240,7 +251,9 @@
       $("lightStatus").textContent = "";
       try {
         const d = await postJson("/api/admin/leds", body);
-        $("lightStatus").textContent = d.on ? "On" : "Off";
+        $("lightStatus").textContent = "album_glow" in body
+          ? `Album glow ${d.album_glow ? "on" : "off"}`
+          : (d.on ? "On" : "Off");
       } catch (err) {
         $("lightStatus").textContent = err.message;
       }
@@ -249,6 +262,32 @@
     $("lightOff").addEventListener("click", () => setLights({ off: true }));
     $("lightColor").addEventListener("change", () => setLights({ color: $("lightColor").value }));
     $("lightBrightness").addEventListener("change", () => setLights({ brightness: Number($("lightBrightness").value) }));
+    $("albumGlow").addEventListener("change", () => setLights({ album_glow: $("albumGlow").checked }));
+
+    // Changing a start/end number lights that LED, so it can be stepped onto the first and last usable spot
+    ["firstLed", "lastLed"].forEach(id => $(id).addEventListener("input", () => {
+      postJson("/api/admin/leds/show", { led: Number($(id).value) })
+        .catch(err => { $("ledSettingsStatus").textContent = err.message; });
+    }));
+    $("saveLedSettings").addEventListener("click", async () => {
+      $("ledSettingsStatus").textContent = "";
+      try {
+        const d = await postJson("/api/admin/leds/settings", {
+          first_led: Number($("firstLed").value),
+          last_led: Number($("lastLed").value),
+          spot_seconds: Number($("spotSeconds").value),
+          find_color: $("findColor").value,
+        });
+        document.querySelectorAll(".admin-table tbody tr").forEach(row => {
+          const r = JSON.parse(row.dataset.record);
+          if (r.id in d.positions) r.led = d.positions[r.id];
+          row.dataset.record = JSON.stringify(r);
+        });
+        $("ledSettingsStatus").textContent = "Saved";
+      } catch (err) {
+        $("ledSettingsStatus").textContent = err.message;
+      }
+    });
 
     $("dlgClose").addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });  // tap outside closes

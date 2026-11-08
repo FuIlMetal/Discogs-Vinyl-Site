@@ -8,14 +8,12 @@ import requests
 import serial
 from PIL import Image
 
-from discogs_api import get_led_brightness
+from discogs_api import get_led_brightness, get_led_settings
 
 LED_COUNT = 102      # LEDs in use: 28in of shelf on a 144 LEDs/m strip. Change this if you cut it differently.
 BAUD_RATE = 115200   # Must match the sketch
 SPOT_WIDTH = 3       # LEDs lit to mark a record
-SPOT_SECONDS = 60    # How long a marked spot stays lit
-SPOT_COLOR = (255, 255, 255)
-GLOW_BEHIND_SPOT = 0.15  # Dim the album glow while a spot is lit so the spot stands out
+PUT_AWAY_COLOR = (255, 90, 0)  # Orange marks where the last played record goes back
 WARM_WHITE = (255, 170, 90)  # Glow for covers with no real color, like black and white sleeves
 OFF = (0, 0, 0)
 
@@ -53,9 +51,12 @@ def _scale(color, factor):
     return tuple(int(c * factor) for c in color)
 
 
-def _send(background, start=0, count=0, color=OFF):
+def _send(background, ranges=((0, 0, OFF),)):
     """Update the strip. Returns False instead of raising, so missing hardware never breaks the site."""
-    line = "S {} {} {} {} {} {} {} {}\n".format(*background, start, count, *color)
+    fields = [*background]
+    for start, count, color in ranges:
+        fields += [start, count, *color]
+    line = "S " + " ".join(map(str, fields)) + "\n"
     with _lock:
         try:
             if not _open_port():
@@ -65,8 +66,8 @@ def _send(background, start=0, count=0, color=OFF):
             if _port.readline().strip() == b"OK":
                 return True
             print(f"LED: Arduino didn't confirm: {line.strip()}")
-        except (serial.SerialException, OSError) as e:
-            print(f"LED: serial error: {e}")
+        except Exception as e:  # Not just SerialException: a vanished Uno can raise termios.error, which would 500 every Find until restart
+            print(f"LED: serial error: {e!r}")
         _close_port()  # Reconnect on the next command, in case it was unplugged
         return False
 
@@ -99,20 +100,29 @@ def get_ambient():
     return _ambient
 
 
-def show_spot(led):
-    """Mark one spot on the shelf for SPOT_SECONDS, then go back to the glow."""
+def show_spots(find=None, put_away=None):
+    """Light only these spots for the saved time, with everything else off, then go back to any glow."""
     global _timer
-    start = max(0, min(LED_COUNT - SPOT_WIDTH, led - SPOT_WIDTH // 2))
+
+    def spot(led, color):
+        return max(0, min(LED_COUNT - SPOT_WIDTH, led - SPOT_WIDTH // 2)), SPOT_WIDTH, color
 
     def restore(generation):
         with _lock:
             if generation == _generation:
                 _send(_glow_color())
 
+    settings = get_led_settings()
+    ranges = []
+    if put_away is not None:
+        ranges.append(spot(put_away, PUT_AWAY_COLOR))
+    if find is not None:  # Painted last, so the find color wins if the two spots overlap
+        ranges.append(spot(find, tuple(bytes.fromhex(settings["find_color"][1:]))))
+
     with _lock:
         _start_new_scene()
-        ok = _send(_scale(_glow_color(), GLOW_BEHIND_SPOT), start, SPOT_WIDTH, SPOT_COLOR)
-        _timer = threading.Timer(SPOT_SECONDS, restore, args=(_generation,))
+        ok = _send(OFF, ranges)
+        _timer = threading.Timer(settings["spot_seconds"], restore, args=(_generation,))
         _timer.daemon = True
         _timer.start()
         return ok
@@ -167,12 +177,17 @@ if __name__ == "__main__":
             pass
 
     get_led_brightness = lambda: 50
-    _port = fake = FakePort([b"OK\r\n", b"OK\r\n", b"ERR\r\n"])
+    get_led_settings = lambda: {"spot_seconds": 60, "find_color": "#ffffff"}
+    _port = fake = FakePort([b"OK\r\n", b"OK\r\n", b"OK\r\n", b"OK\r\n", b"ERR\r\n"])
     assert set_ambient((200, 100, 0))
     assert fake.lines[-1] == "S 100 50 0 0 0 0 0 0\n"
-    assert show_spot(0)  # Clamped to the start of the strip, with the glow dimmed behind it
-    assert fake.lines[-1] == "S 15 7 0 0 3 255 255 255\n"
-    assert not show_spot(LED_COUNT - 1) and fake.lines[-1].split()[4] == str(LED_COUNT - SPOT_WIDTH)
+    assert show_spots(find=0)  # Clamped to the start of the strip, with the glow off
+    assert fake.lines[-1] == "S 0 0 0 0 3 255 255 255\n"
+    assert show_spots(find=50, put_away=20)  # White is painted last, so it wins an overlap
+    assert fake.lines[-1] == "S 0 0 0 19 3 255 90 0 49 3 255 255 255\n"
+    assert show_spots(put_away=20) and fake.lines[-1] == "S 0 0 0 19 3 255 90 0\n"
+    assert len(fake.lines[-2]) < 64  # Longest command has to fit the sketch's line buffer
+    assert not show_spots(find=LED_COUNT - 1) and fake.lines[-1].split()[4] == str(LED_COUNT - SPOT_WIDTH)
     assert _port is None  # A bad reply drops the port so the next command reconnects
     _timer.cancel()
     print("led_controller self-check OK")

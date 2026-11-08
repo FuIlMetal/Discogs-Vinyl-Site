@@ -2,6 +2,7 @@
 import ipaddress
 import os
 import re
+import threading
 from datetime import datetime
 from functools import wraps
 
@@ -11,18 +12,23 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from discogs_api import (
     delete_collection_instance,
     forget_release,
+    get_album_glow,
     get_all_play_counts,
     get_collection,
     get_collection_folders,
     get_collection_value,
+    get_current_record,
     get_led_brightness,
+    get_led_settings,
     get_marketplace_stats,
     get_shelf_anchors,
+    save_led_settings,
+    set_album_glow,
     set_led_brightness,
     set_shelf_anchor,
 )
-from led_controller import LED_COUNT, get_ambient, set_ambient, show_spot
-from shelf import artist_name, current_positions, positions_for, shelf_ids
+from led_controller import LED_COUNT, get_ambient, set_ambient, show_spots
+from shelf import artist_name, current_positions, glow_for_record, positions_for, shelf_ids
 
 admin = Blueprint("admin", __name__)
 
@@ -122,7 +128,8 @@ def admin_page():
 
     return render_template("admin.html", records=records, total=len(releases), value=value,
                            errors=errors, search=search, sort=sort, desc=desc,
-                           led_count=LED_COUNT, brightness=get_led_brightness())
+                           led_count=LED_COUNT, brightness=get_led_brightness(), album_glow=get_album_glow(),
+                           led_settings=get_led_settings())
 
 
 @admin.route("/api/admin/price/<int:release_id>")
@@ -168,7 +175,7 @@ def parse_led(value):
 @admin.route("/api/admin/leds", methods=["POST"])
 @require_admin
 def set_lights():
-    """Lights on in a color ({"color": "#rrggbb"}), off ({"off": true}), and/or {"brightness": 0-100}."""
+    """Lights on in a color ({"color": "#rrggbb"}), off ({"off": true}), {"brightness": 0-100}, and/or {"album_glow": bool}."""
     if not request.is_json:
         return jsonify({"error": "JSON body required"}), 415
     data = request.get_json(silent=True) or {}
@@ -183,12 +190,46 @@ def set_lights():
         if type(brightness) is not int or not 0 <= brightness <= 100:
             return jsonify({"error": "brightness must be a whole number from 0 to 100"}), 400
         set_led_brightness(brightness)
+    if "album_glow" in data:
+        if type(data["album_glow"]) is not bool:
+            return jsonify({"error": "album_glow must be true or false"}), 400
+        set_album_glow(data["album_glow"])
+        if not data["album_glow"]:
+            color = None
     if data.get("off"):
         color = None
 
     if not set_ambient(color):
         return jsonify({"error": "The shelf lights aren't connected"}), 503
-    return jsonify({"on": color is not None, "brightness": get_led_brightness()})
+    playing = get_current_record()
+    if data.get("album_glow") and playing:  # Switched on mid-record, so start glowing now
+        threading.Thread(target=glow_for_record, args=(playing,), daemon=True).start()
+    return jsonify({"on": color is not None, "brightness": get_led_brightness(), "album_glow": get_album_glow()})
+
+
+@admin.route("/api/admin/leds/settings", methods=["POST"])
+@require_admin
+def save_light_settings():
+    """{"first_led", "last_led", "spot_seconds", "find_color"}: the usable strip range and how Find lights up."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    data = request.get_json(silent=True) or {}
+    first_led, last_led = parse_led(data.get("first_led")), parse_led(data.get("last_led"))
+    if first_led is None or last_led is None or first_led >= last_led:
+        return jsonify({"error": f"Start and end must be LEDs from 0 to {LED_COUNT - 1}, with start before end"}), 400
+    spot_seconds = data.get("spot_seconds")
+    if type(spot_seconds) is not int or not 5 <= spot_seconds <= 600:
+        return jsonify({"error": "Light time must be a whole number of seconds from 5 to 600"}), 400
+    find_color = str(data.get("find_color"))
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", find_color):
+        return jsonify({"error": "find_color must look like #rrggbb"}), 400
+
+    save_led_settings(first_led=first_led, last_led=last_led, spot_seconds=spot_seconds, find_color=find_color.lower())
+    try:
+        positions = current_positions()
+    except requests.RequestException as e:
+        return jsonify({"error": f"Saved, but couldn't refresh the record spots: {e}"}), 502
+    return jsonify({"positions": positions})
 
 
 @admin.route("/api/admin/leds/show", methods=["POST"])
@@ -200,7 +241,7 @@ def show_led():
     led = parse_led((request.get_json(silent=True) or {}).get("led"))
     if led is None:
         return jsonify({"error": f"led must be a whole number from 0 to {LED_COUNT - 1}"}), 400
-    if not show_spot(led):
+    if not show_spots(find=led):
         return jsonify({"error": "The shelf lights aren't connected"}), 503
     return jsonify({"led": led})
 

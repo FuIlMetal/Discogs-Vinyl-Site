@@ -440,7 +440,14 @@
         })
         .then(response => response.json())
         .then(data => {
-            status.textContent = data.error || "Look for the white light on the shelf.";
+            if (data.error) {
+                status.textContent = data.error;
+                return;
+            }
+            const lastPlayed = allRecords.find(r => r.id === data.put_away_id);
+            status.textContent = lastPlayed
+                ? `This record's spot is lit. Orange marks where "${lastPlayed.title}" goes back.`
+                : "This record's spot is lit.";
         })
         .catch(() => {
             status.textContent = "Couldn't reach the shelf lights.";
