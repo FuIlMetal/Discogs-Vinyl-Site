@@ -7,6 +7,15 @@ API_BASE = "https://api.discogs.com"
 DB_PATH = "vinyl_collection.db"  # Adjust path as needed
 PLAYS_FIELD_NAME = "Plays"  # Custom collection field in Discogs that stores play counts
 
+LED_SETTING_COLUMNS = {
+    "album_glow": "INTEGER NOT NULL DEFAULT 0",
+    "first_led": "INTEGER NOT NULL DEFAULT 0",
+    "last_led": "INTEGER",
+    "spot_seconds": "INTEGER NOT NULL DEFAULT 60",
+    "find_color": "TEXT NOT NULL DEFAULT '#ffffff'",
+}
+
+
 def init_db():
     """Create tables if they don't exist"""
     conn = sqlite3.connect(DB_PATH)
@@ -121,9 +130,11 @@ def init_db():
             album_glow INTEGER NOT NULL DEFAULT 0
         )
     """)
-    # Databases from before the album glow switch don't have this column yet
-    if "album_glow" not in [row[1] for row in cursor.execute("PRAGMA table_info(led_settings)")]:
-        cursor.execute("ALTER TABLE led_settings ADD COLUMN album_glow INTEGER NOT NULL DEFAULT 0")
+    # Older databases are missing the later settings. last_led NULL means the strip's last LED.
+    have = [row[1] for row in cursor.execute("PRAGMA table_info(led_settings)")]
+    for column, definition in LED_SETTING_COLUMNS.items():
+        if column not in have:
+            cursor.execute(f"ALTER TABLE led_settings ADD COLUMN {column} {definition}")
 
     conn.commit()
     conn.close()
@@ -146,6 +157,21 @@ def set_shelf_anchor(release_id: int, led: int):
     conn.close()
 
 
+def get_led_settings():
+    """Find light and strip range settings from admin, with defaults until they're saved."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT first_led, last_led, spot_seconds, find_color FROM led_settings WHERE id = 1").fetchone()
+    conn.close()
+    first_led, last_led, spot_seconds, find_color = row or (0, None, 60, "#ffffff")
+    return {"first_led": first_led, "last_led": last_led, "spot_seconds": spot_seconds, "find_color": find_color}
+
+
+def save_led_settings(**values):
+    for column, value in values.items():
+        _save_led_setting(column, value)
+
+
 def get_led_brightness():
     """Saved glow brightness as a percentage"""
     init_db()
@@ -155,7 +181,7 @@ def get_led_brightness():
     return row[0] if row else 30
 
 
-def _save_led_setting(column: str, value: int):
+def _save_led_setting(column: str, value):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO led_settings (id, brightness) VALUES (1, 30)")

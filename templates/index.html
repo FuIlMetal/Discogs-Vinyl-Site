@@ -446,8 +446,8 @@
             }
             const lastPlayed = allRecords.find(r => r.id === data.put_away_id);
             status.textContent = lastPlayed
-                ? `White marks this record. Orange marks where "${lastPlayed.title}" goes back.`
-                : "White marks this record.";
+                ? `This record's spot is lit. Orange marks where "${lastPlayed.title}" goes back.`
+                : "This record's spot is lit.";
         })
         .catch(() => {
             status.textContent = "Couldn't reach the shelf lights.";

@@ -6,7 +6,7 @@ import unicodedata
 
 import requests
 
-from discogs_api import get_collection, get_current_record, get_shelf_anchors
+from discogs_api import get_collection, get_current_record, get_led_settings, get_shelf_anchors
 from led_controller import LED_COUNT, cover_color, set_ambient
 
 _releases = []
@@ -35,15 +35,15 @@ def shelf_ids(releases):
     return list(dict.fromkeys(i for i in ids if i))  # shortcut: two copies of a release share one spot
 
 
-def shelf_positions(ids, anchors, led_count):
-    """LED for each id: saved anchors stay exact, and the records between them are spaced evenly."""
+def shelf_positions(ids, anchors, first_led, last_led):
+    """LED for each id: saved anchors stay exact, and the rest are spaced evenly, inside first_led..last_led."""
     if not ids:
         return {}
     points = [(i, anchors[r]) for i, r in enumerate(ids) if r in anchors]
     if not points or points[0][0] != 0:
-        points.insert(0, (0, 0))
+        points.insert(0, (0, first_led))
     if points[-1][0] != len(ids) - 1:
-        points.append((len(ids) - 1, led_count - 1))
+        points.append((len(ids) - 1, last_led))
 
     positions = {ids[points[0][0]]: points[0][1]}
     for (i1, led1), (i2, led2) in zip(points, points[1:]):
@@ -53,7 +53,9 @@ def shelf_positions(ids, anchors, led_count):
 
 
 def positions_for(releases):
-    return shelf_positions(shelf_ids(releases), get_shelf_anchors(), LED_COUNT)
+    settings = get_led_settings()
+    last_led = LED_COUNT - 1 if settings["last_led"] is None else settings["last_led"]
+    return shelf_positions(shelf_ids(releases), get_shelf_anchors(), settings["first_led"], last_led)
 
 
 def _cached_releases(max_age):
@@ -106,13 +108,15 @@ if __name__ == "__main__":
                item(4, "Bjork (2)", "Debut"), item(5, "The Beatles", "Abbey Road"), item(5, "The Beatles", "Abbey Road")]
     assert shelf_ids(records) == [4, 3, 5, 2, 1], shelf_ids(records)
 
-    assert shelf_positions([], {}, 102) == {}
-    assert shelf_positions([7], {}, 102) == {7: 0}
-    assert shelf_positions([7], {7: 40}, 102) == {7: 40}
-    assert shelf_positions([1, 2, 3], {}, 101) == {1: 0, 2: 50, 3: 100}
+    assert shelf_positions([], {}, 0, 101) == {}
+    assert shelf_positions([7], {}, 0, 101) == {7: 0}
+    assert shelf_positions([7], {7: 40}, 0, 101) == {7: 40}
+    assert shelf_positions([1, 2, 3], {}, 0, 100) == {1: 0, 2: 50, 3: 100}
     # Anchors stay exact, and the gaps on each side of them are evenly filled
-    spots = shelf_positions(list("abcde"), {"b": 20, "d": 40}, 101)
+    spots = shelf_positions(list("abcde"), {"b": 20, "d": 40}, 0, 100)
     assert spots == {"a": 0, "b": 20, "c": 30, "d": 40, "e": 100}, spots
-    spots = shelf_positions(list("abc"), {"a": 10, "c": 90}, 101)
+    spots = shelf_positions(list("abc"), {"a": 10, "c": 90}, 0, 100)
     assert spots == {"a": 10, "b": 50, "c": 90}, spots
+    # Unsaved ends land on the usable range, not the strip's ends
+    assert shelf_positions([1, 2, 3], {}, 4, 96) == {1: 4, 2: 50, 3: 96}
     print("shelf self-check OK")

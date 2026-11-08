@@ -8,13 +8,11 @@ import requests
 import serial
 from PIL import Image
 
-from discogs_api import get_led_brightness
+from discogs_api import get_led_brightness, get_led_settings
 
 LED_COUNT = 102      # LEDs in use: 28in of shelf on a 144 LEDs/m strip. Change this if you cut it differently.
 BAUD_RATE = 115200   # Must match the sketch
 SPOT_WIDTH = 3       # LEDs lit to mark a record
-SPOT_SECONDS = 60    # How long a marked spot stays lit
-FIND_COLOR = (255, 255, 255)
 PUT_AWAY_COLOR = (255, 90, 0)  # Orange marks where the last played record goes back
 WARM_WHITE = (255, 170, 90)  # Glow for covers with no real color, like black and white sleeves
 OFF = (0, 0, 0)
@@ -103,7 +101,7 @@ def get_ambient():
 
 
 def show_spots(find=None, put_away=None):
-    """Light only these spots for SPOT_SECONDS, with everything else off, then go back to any glow."""
+    """Light only these spots for the saved time, with everything else off, then go back to any glow."""
     global _timer
 
     def spot(led, color):
@@ -114,16 +112,17 @@ def show_spots(find=None, put_away=None):
             if generation == _generation:
                 _send(_glow_color())
 
+    settings = get_led_settings()
     ranges = []
     if put_away is not None:
         ranges.append(spot(put_away, PUT_AWAY_COLOR))
-    if find is not None:  # Painted last, so white wins if the two spots overlap
-        ranges.append(spot(find, FIND_COLOR))
+    if find is not None:  # Painted last, so the find color wins if the two spots overlap
+        ranges.append(spot(find, tuple(bytes.fromhex(settings["find_color"][1:]))))
 
     with _lock:
         _start_new_scene()
         ok = _send(OFF, ranges)
-        _timer = threading.Timer(SPOT_SECONDS, restore, args=(_generation,))
+        _timer = threading.Timer(settings["spot_seconds"], restore, args=(_generation,))
         _timer.daemon = True
         _timer.start()
         return ok
@@ -178,6 +177,7 @@ if __name__ == "__main__":
             pass
 
     get_led_brightness = lambda: 50
+    get_led_settings = lambda: {"spot_seconds": 60, "find_color": "#ffffff"}
     _port = fake = FakePort([b"OK\r\n", b"OK\r\n", b"OK\r\n", b"OK\r\n", b"ERR\r\n"])
     assert set_ambient((200, 100, 0))
     assert fake.lines[-1] == "S 100 50 0 0 0 0 0 0\n"

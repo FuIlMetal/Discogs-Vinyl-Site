@@ -2,7 +2,7 @@
 
 An Arduino Uno drives a WS2812B strip under the shelf above the records. The Pi sends it commands over USB.
 
-- **Find on Shelf** turns off all other lights for 60 seconds and lights the record's spot in white. The last played record's spot lights in orange, showing where it goes back.
+- **Find on Shelf** turns off all other lights and lights the record's spot (white for 60 seconds unless changed under **Find light** in `/admin`). The last played record's spot lights in orange, showing where it goes back.
 - **✕ on the Now Spinning banner** lights where the record goes back in orange.
 - **Album glow** is off by default. Turn it on in `/admin` to make the strip glow in the cover's color while a record plays.
 - **/admin** (Tailscale only) has on/off, color, brightness and album glow controls, the shelf order, and spot checking.
@@ -54,10 +54,11 @@ The auto-updater installs the Python packages. No nginx change is needed.
 
 ## Sort and check the shelf
 
-1. Open `/admin`. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
-2. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
-3. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
-4. Tap any record to check where its light lands.
+1. In `/admin` under **Find light**, step **Strip starts at LED** and **ends at LED** until the lit LED sits over the first and last record slot, then **Save**. Records without a saved spot stay inside that range.
+2. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
+3. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
+4. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
+5. Tap any record to check where its light lands.
 
 Order is by the artist name exactly as Discogs writes it, the same as the home page, so The Beatles file under T and Miles Davis under M.
 
