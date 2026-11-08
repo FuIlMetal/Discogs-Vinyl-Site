@@ -35,11 +35,14 @@ Fix the channel near the front edge of the underside of the shelf above, so the 
 
 ## Flash the Arduino
 
-From any computer with the [Arduino IDE](https://www.arduino.cc/en/software):
+On the Pi, with the Uno plugged in:
 
-1. Install the **FastLED** library (Tools → Manage Libraries).
-2. Open `arduino/vinyl_leds/vinyl_leds.ino`.
-3. Select **Arduino Uno**, then upload.
+```bash
+cd ~/Vinyl-site/discogs-vinyl-site
+bash deploy/flash-arduino.sh
+```
+
+The first run installs `arduino-cli`, the Uno board files and FastLED, which takes a few minutes. The site pauses for the upload and starts again on its own. Run it again whenever the sketch changes.
 
 ## Set up the Pi
 
