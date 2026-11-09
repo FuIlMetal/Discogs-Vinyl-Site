@@ -23,7 +23,7 @@ from discogs_api import (
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
 from led_controller import set_ambient, show_spots
-from shelf import glow_for_record, placement, spot_for
+from shelf import artist_sort_name, glow_for_record, placement, spot_for
 from admin import admin
 
 # Load environment variables from .env file
@@ -125,7 +125,7 @@ def index():
 
     # Sort
     if sort_by == "artist":
-        collection.sort(key=lambda x: x["artist"])
+        collection.sort(key=lambda x: artist_sort_name(x["artist"]))
     elif sort_by == "year":
         collection.sort(key=lambda x: x["year"] if isinstance(x["year"], int) else 0)
     elif sort_by == "play_count":

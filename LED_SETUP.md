@@ -65,7 +65,7 @@ The auto-updater installs the Python packages. No nginx change is needed.
 4. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
 5. Tap any record to check where its light lands.
 
-Order is by the artist name exactly as Discogs writes it, the same as the home page, so The Beatles file under T and Miles Davis under M.
+Order is by artist name, the same as the home page, ignoring a leading "The": The Alarm files under A and The Who under W. Miles Davis still files under M. Tap a record in `/admin` to see which records it goes between.
 
 The site can address up to 300 LEDs. Set where your strip really starts and ends with the Find light settings in step 1. For a strip longer than 300, raise `LED_COUNT` in `led_controller.py` and `MAX_LEDS` in the sketch to match, then flash the Uno again.
 

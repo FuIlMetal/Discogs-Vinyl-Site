@@ -139,6 +139,7 @@
     <h2 id="dlgTitle"></h2>
     <p class="artist" id="dlgArtist"></p>
     <p id="dlgSpot" aria-live="polite"></p>
+    <p id="dlgNeighbors"></p>
     <div class="admin-spot">
       <button class="random-btn" id="spotLeft" type="button" aria-label="Move light left">◀</button>
       <button class="random-btn" id="spotRight" type="button" aria-label="Move light right">▶</button>
@@ -181,6 +182,9 @@
     function describeSpot(r, led, note) {
       const kind = led === r.led && r.pinned ? "saved" : (led === r.led ? "estimated" : "not saved yet");
       $("dlgSpot").textContent = `Shelf #${r.shelf} · LED ${led} (${kind})${note ? " · " + note : ""}`;
+      $("dlgNeighbors").textContent = r.after && r.before ? `Goes between ${r.after} and ${r.before}`
+        : r.after ? `Last on the shelf, after ${r.after}`
+        : r.before ? `First on the shelf, before ${r.before}` : "";
     }
 
     async function lightSpot(led) {

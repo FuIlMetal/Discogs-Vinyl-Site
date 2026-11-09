@@ -260,12 +260,17 @@
         applyFilters();
     }
 
+    // How an artist files: no leading "The", so The Who sorts under W. Must match artist_sort_name in shelf.py.
+    function artistSortName(artist) {
+        return artist.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/^the\s+(?=\S)/, "");
+    }
+
     function applySort() {
         const sortBy = document.getElementById("sortSelect").value;
 
         if (sortBy === "artist") {
             filteredRecords.sort((a, b) => {
-                const comparison = a.artist.localeCompare(b.artist);
+                const comparison = artistSortName(a.artist).localeCompare(artistSortName(b.artist));
                 return sortAscending ? comparison : -comparison;});
         } else if (sortBy === "year") {
             filteredRecords.sort((a, b) => {
