@@ -28,7 +28,7 @@ from discogs_api import (
     set_shelf_anchor,
 )
 from led_controller import LED_COUNT, get_ambient, set_ambient, show_spots
-from shelf import artist_name, current_positions, glow_for_record, positions_for, shelf_ids
+from shelf import artist_name, current_positions, glow_for_record, neighbors, positions_for, shelf_ids
 
 admin = Blueprint("admin", __name__)
 
@@ -94,6 +94,7 @@ def admin_page():
     shelf_numbers = {release_id: i + 1 for i, release_id in enumerate(shelf_ids(releases))}
     positions = positions_for(releases)
     anchors = get_shelf_anchors()
+    beside = neighbors(releases)
 
     records = []
     for item in releases:
@@ -104,6 +105,8 @@ def admin_page():
             "shelf": shelf_numbers.get(basic.get("id"), 0),
             "led": positions.get(basic.get("id"), 0),
             "pinned": basic.get("id") in anchors,
+            "after": beside.get(basic.get("id"), (None, None))[0],
+            "before": beside.get(basic.get("id"), (None, None))[1],
             "instance_id": item.get("instance_id"),
             "folder_id": item.get("folder_id"),
             "artist": artist_name(basic),

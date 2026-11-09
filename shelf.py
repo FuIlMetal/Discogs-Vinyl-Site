@@ -23,10 +23,16 @@ def _plain(text):
     return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).casefold()
 
 
+def artist_sort_name(artist):
+    """How an artist files: plain lowercase without a leading "The", so The Who files under W.
+    Must match artistSortName on the home page."""
+    return re.sub(r"^the\s+(?=\S)", "", _plain(artist).strip())
+
+
 def shelf_sort_key(item):
     basic = item.get("basic_information", {})
-    # Same artist order as the home page, so The Beatles file under T and Miles Davis under M
-    return _plain(artist_name(basic)), _plain(basic.get("title", "")), basic.get("id") or 0
+    # Same artist order as the home page. Miles Davis still files under M: only "The" is dropped.
+    return artist_sort_name(artist_name(basic)), _plain(basic.get("title", "")), basic.get("id") or 0
 
 
 def shelf_ids(releases):
@@ -75,6 +81,15 @@ def spot_for(release_id):
     return led
 
 
+def neighbors(releases):
+    """{release_id: (label of the record on its left, label on its right)}, with None at the shelf ends."""
+    ids = shelf_ids(releases)
+    basics = {item.get("basic_information", {}).get("id"): item.get("basic_information", {}) for item in releases}
+    labels = [f"{artist_name(basics[i])} – {basics[i].get('title', '')}" for i in ids]
+    return {release_id: (labels[i - 1] if i > 0 else None, labels[i + 1] if i + 1 < len(ids) else None)
+            for i, release_id in enumerate(ids)}
+
+
 def placement(release_id):
     """Where a record goes on the shelf: its LED, its # from the left, and the records either side.
     Fetches the collection fresh, so call it right after adding a record. None if it isn't there."""
@@ -82,18 +97,9 @@ def placement(release_id):
     ids = shelf_ids(releases)
     if release_id not in ids:
         return None
-    i = ids.index(release_id)
-    basics = {item.get("basic_information", {}).get("id"): item.get("basic_information", {}) for item in releases}
-
-    def label(other):
-        return f"{artist_name(basics[other])} – {basics[other].get('title', '')}"
-
-    return {
-        "led": positions_for(releases)[release_id],
-        "number": i + 1,
-        "after": label(ids[i - 1]) if i > 0 else None,
-        "before": label(ids[i + 1]) if i + 1 < len(ids) else None,
-    }
+    after, before = neighbors(releases)[release_id]
+    return {"led": positions_for(releases)[release_id], "number": ids.index(release_id) + 1,
+            "after": after, "before": before}
 
 
 def current_positions():
@@ -126,8 +132,13 @@ if __name__ == "__main__":
         return {"basic_information": {"id": release_id, "title": title, "artists": [{"name": artist}]}}
 
     records = [item(1, "Zappa", "A"), item(2, "The Beatles", "Help"), item(3, "björk", "Post"),
-               item(4, "Bjork (2)", "Debut"), item(5, "The Beatles", "Abbey Road"), item(5, "The Beatles", "Abbey Road")]
-    assert shelf_ids(records) == [4, 3, 5, 2, 1], shelf_ids(records)
+               item(4, "Bjork (2)", "Debut"), item(5, "The Beatles", "Abbey Road"), item(5, "The Beatles", "Abbey Road"),
+               item(6, "The Who", "Tommy"), item(7, "The Alarm", "Strength"), item(8, "Theo Parrish", "X"),
+               item(9, "The The", "Soul Mining")]
+    # "The" is dropped (The Alarm under A, The Who under W) but not from Theo, and The The still files under T
+    assert shelf_ids(records) == [7, 5, 2, 4, 3, 9, 8, 6, 1], shelf_ids(records)
+    assert neighbors(records)[5] == ("The Alarm – Strength", "The Beatles – Help")
+    assert neighbors(records)[7][0] is None and neighbors(records)[1][1] is None
 
     assert shelf_positions([], {}, 0, 101) == {}
     assert shelf_positions([7], {}, 0, 101) == {7: 0}
