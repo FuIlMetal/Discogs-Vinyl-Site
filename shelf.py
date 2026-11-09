@@ -90,10 +90,10 @@ def neighbors(releases):
             for i, release_id in enumerate(ids)}
 
 
-def placement(release_id):
+def placement(release_id, max_age=0):
     """Where a record goes on the shelf: its LED, its # from the left, and the records either side.
-    Fetches the collection fresh, so call it right after adding a record. None if it isn't there."""
-    releases = _cached_releases(0)
+    Fetches the collection fresh by default, so a record added a moment ago is placed. None if it isn't there."""
+    releases = _cached_releases(max_age)
     ids = shelf_ids(releases)
     if release_id not in ids:
         return None

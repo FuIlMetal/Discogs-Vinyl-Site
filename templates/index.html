@@ -13,9 +13,9 @@
       <div id="nowPlaying" class="now-playing" aria-live="polite">
         <span class="now-playing-dot"></span>
         <span class="now-playing-label">Now spinning:</span>
-        <span id="nowPlayingText" class="now-playing-text">Nothing right now</span>
-        <button id="clearNowPlayingBtn" class="now-playing-clear" onclick="clearNowPlaying()" aria-label="Clear now playing">
-          ✕
+        <button id="nowPlayingText" class="now-playing-text" onclick="openNowPlaying()">Nothing right now</button>
+        <button id="clearNowPlayingBtn" class="now-playing-clear" onclick="clearNowPlaying()">
+          Put away
         </button>
       </div>
       <div class="header-buttons">
@@ -107,6 +107,7 @@
                         <button class="play-btn" onclick="incrementPlayCount()" aria-label="Increase play count">Let's Play This</button>
                         <button class="play-btn ghost" id="undoPlayBtn" onclick="decrementPlayCount()" style="display: none;">Undo</button>
                         <button class="play-btn" onclick="findOnShelf()">💡 Find on Shelf</button>
+                        <button class="play-btn" id="putAwayBtn" onclick="clearNowPlaying()" style="display: none;">📥 Put this away</button>
                     </div>
                     <p id="findStatus" aria-live="polite"></p>
                 </div>
@@ -395,6 +396,7 @@
         // Store current record ID for play count updates
         currentRecordId = record.id;
         document.getElementById("findStatus").textContent = "";
+        updatePutAwayButton();
 
         // Populate modal content first
         const coverImage = record.cover_image || record.thumb || "";
@@ -584,10 +586,25 @@
         });
     }
 
+    function openNowPlaying() {
+        const record = allRecords.find(r => r.id === nowPlayingRecordId);
+        if (record) openModal(record);
+    }
+
+    // "Put this away" shows in the pop-up only for the record that's spinning
+    function updatePutAwayButton() {
+        document.getElementById("putAwayBtn").style.display =
+            nowPlayingRecordId && currentRecordId === nowPlayingRecordId ? "" : "none";
+    }
+
+    let putAwayTimer = null;
+
     function updateNowPlayingBanner() {
         const banner = document.getElementById("nowPlaying");
         const textEl = document.getElementById("nowPlayingText");
         if (!banner || !textEl) return;
+        clearTimeout(putAwayTimer);
+        updatePutAwayButton();
 
         if (!nowPlayingRecordId) {
             banner.classList.remove("visible");
@@ -605,6 +622,8 @@
         }
 
         textEl.textContent = `${record.artist} — ${record.title}`;
+        textEl.disabled = false;
+        document.getElementById("clearNowPlayingBtn").hidden = false;
         banner.classList.add("visible");
         // Re-render so the current card is subtly highlighted
         render();
@@ -619,9 +638,25 @@
         })
         .then(response => response.json())
         .then(data => {
-            // The server lights the spot where the record goes back
+            // The server lights the spot where the record goes back; say where, then hide the banner
             nowPlayingRecordId = null;
             updateNowPlayingBanner();
+            const s = data.shelf;
+            if (!s) return;
+            const where = s.after && s.before ? `between ${s.after} and ${s.before}`
+                : s.after ? `at the end, after ${s.after}`
+                : s.before ? `at the start, before ${s.before}` : "on the shelf";
+            const message = `Goes back at #${s.number}, ${where}.` + (s.lit ? " Orange marks the spot." : "");
+            const banner = document.getElementById("nowPlaying");
+            const textEl = document.getElementById("nowPlayingText");
+            textEl.textContent = message;
+            textEl.disabled = true;
+            document.getElementById("clearNowPlayingBtn").hidden = true;
+            banner.classList.add("visible");
+            putAwayTimer = setTimeout(updateNowPlayingBanner, 15000);
+            if (document.getElementById("trackModal").classList.contains("show")) {
+                document.getElementById("findStatus").textContent = message;
+            }
         })
         .catch(error => {
             console.error("Error clearing now playing:", error);
@@ -677,7 +712,10 @@
                 return response.json();
             })
             .then(data => {
-                lyricsContent.innerHTML = `<div class="lyrics-text">${data.lyrics.replace(/\n/g, '<br>')}</div>`;
+                const text = document.createElement("div");
+                text.className = "lyrics-text";
+                text.textContent = data.lyrics;  // pre-wrap in the CSS keeps the line breaks
+                lyricsContent.replaceChildren(text);
             })
             .catch(error => {
                 console.error("Error fetching lyrics:", error);

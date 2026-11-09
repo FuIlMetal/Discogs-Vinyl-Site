@@ -227,15 +227,16 @@ def clear_now_playing_api():
     clear_now_playing()
     if get_album_glow():  # With the glow switched off, any light on is one set by hand in admin, so leave it
         set_ambient(None)
+    shelf = None
     if was_playing:
         try:
-            led = spot_for(was_playing)
-            if led is not None:
-                show_spots(put_away=led)
+            shelf = placement(was_playing, max_age=300)
         except requests.RequestException as e:
             print(f"LED: couldn't look up shelf spot for {was_playing}: {e}")
+        if shelf:
+            shelf["lit"] = show_spots(put_away=shelf["led"])
     last_played_id = get_last_played()
-    return jsonify({"current_record_id": None, "last_played_id": last_played_id})
+    return jsonify({"current_record_id": None, "last_played_id": last_played_id, "shelf": shelf})
 
 
 @app.route("/api/leds/locate", methods=["POST"])
