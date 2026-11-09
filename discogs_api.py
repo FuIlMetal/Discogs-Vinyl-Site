@@ -13,6 +13,7 @@ LED_SETTING_COLUMNS = {
     "last_led": "INTEGER",
     "spot_seconds": "INTEGER NOT NULL DEFAULT 60",
     "find_color": "TEXT NOT NULL DEFAULT '#ffffff'",
+    "wave_speed": "INTEGER NOT NULL DEFAULT 3",
 }
 
 
@@ -161,10 +162,11 @@ def get_led_settings():
     """Find light and strip range settings from admin, with defaults until they're saved."""
     init_db()
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT first_led, last_led, spot_seconds, find_color FROM led_settings WHERE id = 1").fetchone()
+    row = conn.execute("SELECT first_led, last_led, spot_seconds, find_color, wave_speed FROM led_settings WHERE id = 1").fetchone()
     conn.close()
-    first_led, last_led, spot_seconds, find_color = row or (0, None, 60, "#ffffff")
-    return {"first_led": first_led, "last_led": last_led, "spot_seconds": spot_seconds, "find_color": find_color}
+    first_led, last_led, spot_seconds, find_color, wave_speed = row or (0, None, 60, "#ffffff", 3)
+    return {"first_led": first_led, "last_led": last_led, "spot_seconds": spot_seconds, "find_color": find_color,
+            "wave_speed": wave_speed}
 
 
 def save_led_settings(**values):
