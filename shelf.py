@@ -75,6 +75,27 @@ def spot_for(release_id):
     return led
 
 
+def placement(release_id):
+    """Where a record goes on the shelf: its LED, its # from the left, and the records either side.
+    Fetches the collection fresh, so call it right after adding a record. None if it isn't there."""
+    releases = _cached_releases(0)
+    ids = shelf_ids(releases)
+    if release_id not in ids:
+        return None
+    i = ids.index(release_id)
+    basics = {item.get("basic_information", {}).get("id"): item.get("basic_information", {}) for item in releases}
+
+    def label(other):
+        return f"{artist_name(basics[other])} – {basics[other].get('title', '')}"
+
+    return {
+        "led": positions_for(releases)[release_id],
+        "number": i + 1,
+        "after": label(ids[i - 1]) if i > 0 else None,
+        "before": label(ids[i + 1]) if i + 1 < len(ids) else None,
+    }
+
+
 def current_positions():
     return positions_for(_cached_releases(300))
 

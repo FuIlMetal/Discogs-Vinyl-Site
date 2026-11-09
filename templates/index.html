@@ -141,6 +141,14 @@
     </div>
 </div>
 
+<!-- Random pick: covers shuffle like a jukebox while the shelf lights spin -->
+<div id="shuffleOverlay" class="modal shuffle-overlay" aria-hidden="true">
+    <div class="shuffle-stage">
+        <img id="shuffleCover" class="shuffle-cover" alt="">
+        <p id="shuffleCaption" class="shuffle-caption" aria-live="polite"></p>
+    </div>
+</div>
+
 <!-- Modal for adding records -->
 <div id="addModal" class="modal">
     <div class="modal-content" onclick="event.stopPropagation()">
@@ -293,9 +301,81 @@
         const randomIndex = Math.floor(Math.random() * recordsToChooseFrom.length);
         const randomRecord = recordsToChooseFrom[randomIndex];
         
-        // Open the modal for the random record, and spin the shelf lights onto it
-        openModal(randomRecord);
-        findOnShelf(true);
+        if (shuffling) return;
+
+        // Spin the shelf lights onto it while covers shuffle on screen, landing together
+        const lightsMessage = locateRecord(randomRecord.id, true);
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            openRandomResult(randomRecord, lightsMessage);
+        } else {
+            shuffleCovers(recordsToChooseFrom, randomRecord, lightsMessage);
+        }
+    }
+
+    const SPIN_MS = 4000;  // Must match SPIN_MS in the Arduino sketch, so the cover lands with the lights
+    let shuffling = false;
+
+    function openRandomResult(record, lightsMessage) {
+        openModal(record);
+        lightsMessage.then(message => {
+            if (currentRecordId === record.id) document.getElementById("findStatus").textContent = message;
+        });
+    }
+
+    function shuffleCovers(pool, record, lightsMessage) {
+        const overlay = document.getElementById("shuffleOverlay");
+        const cover = document.getElementById("shuffleCover");
+        const caption = document.getElementById("shuffleCaption");
+        const covers = pool.map(r => r.thumb || r.cover_image).filter(Boolean);
+        const finalCover = record.cover_image || record.thumb || "";
+        if (finalCover) new Image().src = finalCover;  // Preload so the landing frame isn't blank
+
+        shuffling = true;
+        caption.textContent = "Picking a record…";
+        cover.classList.remove("landed");
+        overlay.classList.add("show");
+        overlay.setAttribute("aria-hidden", "false");
+
+        // The lights start spinning when the server answers, so the slow-down is timed from then.
+        // Until it answers, covers flip at full speed.
+        let end = null;
+        const startCountdown = () => { if (end === null) end = performance.now() + SPIN_MS; };
+        lightsMessage.then(startCountdown);
+        setTimeout(startCountdown, 2500);  // Don't wait forever on a slow server
+
+        let last = -1;
+        function flip() {
+            const now = performance.now();
+            if (end !== null && now >= end) return land();
+            const progress = end === null ? 0 : Math.min(1, Math.max(0, 1 - (end - now) / SPIN_MS));
+            const delay = 45 + 500 * progress ** 3;  // Ease out, like the lights
+            if (covers.length) {
+                let i = Math.floor(Math.random() * covers.length);
+                if (i === last && covers.length > 1) i = (i + 1) % covers.length;
+                last = i;
+                cover.src = covers[i];
+            }
+            cover.style.animationDuration = Math.min(delay, 220) + "ms";
+            cover.classList.remove("flip");
+            void cover.offsetWidth;  // Restart the flip animation
+            cover.classList.add("flip");
+            setTimeout(flip, end === null ? delay : Math.min(delay, end - now));
+        }
+
+        function land() {
+            cover.src = finalCover;
+            cover.classList.remove("flip");
+            cover.classList.add("landed");
+            caption.textContent = `${record.title} — ${record.artist}`;
+            setTimeout(() => {
+                overlay.classList.remove("show");
+                overlay.setAttribute("aria-hidden", "true");
+                shuffling = false;
+                openRandomResult(record, lightsMessage);
+            }, 900);
+        }
+
+        flip();
     }
 
     let scrollPosition = 0;
@@ -429,30 +509,30 @@
         });
     }
 
-    function findOnShelf(spin = false) {
-        const status = document.getElementById("findStatus");
-        status.textContent = spin ? "Spinning…" : "Finding…";
-        fetch("/api/leds/locate", {
+    // Light a record's spot. Resolves to a message for the page; never rejects.
+    function locateRecord(releaseId, spin = false) {
+        return fetch("/api/leds/locate", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ release_id: currentRecordId, spin })
+            body: JSON.stringify({ release_id: releaseId, spin })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.error) {
-                status.textContent = data.error;
-                return;
-            }
+            if (data.error) return data.error;
             const lastPlayed = allRecords.find(r => r.id === data.put_away_id);
-            status.textContent = lastPlayed
+            return lastPlayed
                 ? `This record's spot is lit. Orange marks where "${lastPlayed.title}" goes back.`
                 : "This record's spot is lit.";
         })
-        .catch(() => {
-            status.textContent = "Couldn't reach the shelf lights.";
-        });
+        .catch(() => "Couldn't reach the shelf lights.");
+    }
+
+    function findOnShelf() {
+        const status = document.getElementById("findStatus");
+        status.textContent = "Finding…";
+        locateRecord(currentRecordId).then(message => { status.textContent = message; });
     }
 
     function decrementPlayCount() {
@@ -735,6 +815,13 @@
         .then(({ ok, data }) => {
             if (!ok) throw new Error(data.error);
             btn.textContent = "Added ✓";
+            if (data.shelf) {
+                const s = data.shelf;
+                const between = s.after && s.before ? `between ${s.after} and ${s.before}`
+                    : s.after ? `at the end, after ${s.after}`
+                    : s.before ? `at the start, before ${s.before}` : "on the shelf";
+                setAddStatus(`Shelve it at #${s.number}, ${between}.` + (s.lit ? " The lights show the spot." : ""));
+            }
             if (data.record) {
                 allRecords.push(data.record);
                 applyFilters();

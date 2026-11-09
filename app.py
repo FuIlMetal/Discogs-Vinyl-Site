@@ -23,7 +23,7 @@ from discogs_api import (
 )  # Import from your new file
 from lyrics_api import get_lyrics  # Import lyrics function
 from led_controller import set_ambient, show_spots
-from shelf import glow_for_record, spot_for
+from shelf import glow_for_record, placement, spot_for
 from admin import admin
 
 # Load environment variables from .env file
@@ -205,7 +205,16 @@ def add_to_collection_api():
     item["tracks"] = get_release_tracks(int(release_id), DISCOGS_TOKEN)
     cache_release(int(release_id), item.get("basic_information", {}), item["tracks"])
     record = format_record(item, get_all_play_counts(), get_current_record())
-    return jsonify({"added": release_id, "record": record}), 201
+
+    # Show where the new record goes: tell the page, and spin the shelf lights onto the spot
+    try:
+        shelf = placement(int(release_id))
+    except requests.RequestException as e:
+        print(f"LED: couldn't work out the shelf spot for new record {release_id}: {e}")
+        shelf = None
+    if shelf:
+        shelf["lit"] = show_spots(find=shelf["led"], spin=True)
+    return jsonify({"added": release_id, "record": record, "shelf": shelf}), 201
 
 
 @app.route("/api/now_playing/clear", methods=["POST"])
