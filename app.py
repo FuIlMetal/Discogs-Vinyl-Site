@@ -231,7 +231,8 @@ def clear_now_playing_api():
 
 @app.route("/api/leds/locate", methods=["POST"])
 def locate_record():
-    """Light a record's spot in white and the last played record's spot in orange. Public: anyone at the shelf can use Find."""
+    """Light a record's spot and the last played record's spot in orange. {"spin": true} sweeps onto it first (Random).
+    Public: anyone at the shelf can use Find."""
     data = request.get_json(silent=True) or {}
     try:
         release_id = int(data["release_id"])
@@ -246,7 +247,7 @@ def locate_record():
         return jsonify({"error": f"Couldn't load the collection: {e}"}), 502
     if led is None:
         return jsonify({"error": "That record isn't in the collection"}), 404
-    if not show_spots(find=led, put_away=put_away_led):
+    if not show_spots(find=led, put_away=put_away_led, spin=data.get("spin") is True):
         return jsonify({"error": "The shelf lights aren't connected"}), 503
     return jsonify({"led": led, "put_away_id": last_played_id if put_away_led is not None else None})
 

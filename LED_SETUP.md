@@ -3,6 +3,7 @@
 An Arduino Uno drives a WS2812B strip under the shelf above the records. The Pi sends it commands over USB.
 
 - **Find on Shelf** turns off all other lights and lights the record's spot (white for 60 seconds unless changed under **Find light** in `/admin`). The last played record's spot lights in orange, showing where it goes back.
+- **🎲 Random Record** spins a streak across the shelf that slows down and lands on the chosen record, then shows it like Find.
 - **✕ on the Now Spinning banner** lights where the record goes back in orange.
 - **Album wave** is off by default. Turn it on in `/admin` to make a slow wave of 2–3 colors from the cover scroll along the strip while a record plays. Set its speed under **Find light**.
 - **/admin** (Tailscale only) has on/off, color, brightness and album glow controls, the shelf order, and spot checking.

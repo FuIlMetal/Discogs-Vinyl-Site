@@ -13,6 +13,7 @@ from discogs_api import get_led_brightness, get_led_settings
 LED_COUNT = 300      # Most LEDs the site can address. Must match MAX_LEDS in the sketch. Set the real ends in /admin.
 BAUD_RATE = 115200   # Must match the sketch
 SPOT_WIDTH = 3       # LEDs lit to mark a record
+SPIN_SECONDS = 4     # Must match SPIN_MS in the sketch
 PUT_AWAY_COLOR = (255, 90, 0)  # Orange marks where the last played record goes back
 WARM_WHITE = (255, 170, 90)  # Glow for covers with no real color, like black and white sleeves
 OFF = (0, 0, 0)
@@ -79,12 +80,13 @@ def _command(line):
         return False
 
 
-def _send(background, ranges=((0, 0, OFF),)):
-    """Fill the strip with background and paint up to two (start, count, color) ranges on top."""
-    fields = [*background]
+def _send(background, ranges=((0, 0, OFF),), spin=None):
+    """Fill the strip with background and paint up to two (start, count, color) ranges on top.
+    With spin=(first, last), a streak laps those LEDs first and lands on the last range."""
+    fields = [*spin, *background] if spin else [*background]
     for start, count, color in ranges:
         fields += [start, count, *color]
-    return _command("S " + " ".join(map(str, fields)) + "\n")
+    return _command(("P " if spin else "S ") + " ".join(map(str, fields)) + "\n")
 
 
 def _show_glow():
@@ -119,8 +121,9 @@ def get_ambient():
     return _ambient
 
 
-def show_spots(find=None, put_away=None):
-    """Light only these spots for the saved time, with everything else off, then go back to any glow."""
+def show_spots(find=None, put_away=None, spin=False):
+    """Light only these spots for the saved time, with everything else off, then go back to any glow.
+    spin=True first sweeps a streak across the shelf that slows down onto the find spot."""
     global _timer
 
     def spot(led, color):
@@ -140,8 +143,14 @@ def show_spots(find=None, put_away=None):
 
     with _lock:
         _start_new_scene()
-        ok = _send(OFF, ranges)
-        _timer = threading.Timer(settings["spot_seconds"], restore, args=(_generation,))
+        seconds = settings["spot_seconds"]
+        if spin and find is not None:
+            last_led = LED_COUNT - 1 if settings["last_led"] is None else settings["last_led"]
+            ok = _send(OFF, ranges, spin=(settings["first_led"], last_led))
+            seconds += SPIN_SECONDS
+        else:
+            ok = _send(OFF, ranges)
+        _timer = threading.Timer(seconds, restore, args=(_generation,))
         _timer.daemon = True
         _timer.start()
         return ok
@@ -162,7 +171,9 @@ def cover_colors(image, count=3):
             picked.append((hue, saturation))
         if len(picked) == count:
             break
-    colors = [tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, s, 1)) for h, s in picked] or [WARM_WHITE]
+    # LEDs wash pale colors out to white, so muted covers (lo-fi, pastels) get their saturation pushed up
+    colors = [tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, 0.7 + 0.3 * (s - 0.2) / 0.8, 1))
+              for h, s in picked] or [WARM_WHITE]
     if len(colors) == 1:  # One color still gets a gentle wave, into a dim version of itself
         colors.append(_scale(colors[0], 0.3))
     return colors
@@ -217,8 +228,8 @@ if __name__ == "__main__":
             pass
 
     get_led_brightness = lambda: 50
-    get_led_settings = lambda: {"spot_seconds": 60, "find_color": "#ffffff", "wave_speed": 3}
-    _port = fake = FakePort([b"OK\r\n"] * 6 + [b"ERR\r\n"], lost=2)  # Lost wake bytes are retried
+    get_led_settings = lambda: {"spot_seconds": 60, "find_color": "#ffffff", "wave_speed": 3, "first_led": 5, "last_led": None}
+    _port = fake = FakePort([b"OK\r\n"] * 7 + [b"ERR\r\n"], lost=2)  # Lost wake bytes are retried
     assert set_ambient([(200, 100, 0)])
     assert fake.lines[-1] == "S 100 50 0 0 0 0 0 0\n"
     assert set_ambient([(200, 100, 0), (0, 0, 255), (10, 20, 30), (1, 1, 1), (2, 2, 2)])  # Wave, capped at 4 colors
@@ -232,6 +243,10 @@ if __name__ == "__main__":
     assert show_spots(put_away=20) and fake.lines[-1] == "S 0 0 0 19 3 255 90 0\n"
     assert len("S 255 255 255 297 3 255 90 0 297 3 255 255 255\n") < 64
     assert set_ambient(None) and fake.lines[-1] == "S 0 0 0 0 0 0 0 0\n"
+    assert show_spots(find=50, put_away=20, spin=True)
+    assert fake.lines[-1] == f"P 5 {LED_COUNT - 1} 0 0 0 19 3 255 90 0 49 3 255 255 255\n", fake.lines[-1]
+    assert _timer.interval == 60 + SPIN_SECONDS
+    assert len(f"P 299 299 255 255 255 297 3 255 90 0 297 3 255 255 255\n") < 64
     assert not show_spots(find=LED_COUNT - 1) and fake.lines[-1].split()[4] == str(LED_COUNT - SPOT_WIDTH)
     assert _port is None  # A bad reply drops the port so the next command reconnects
     _port = FakePort([], lost=99)
