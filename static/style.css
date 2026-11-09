@@ -1094,3 +1094,52 @@ h1 {
 .admin-menu-items a:focus {
     background: rgba(102, 126, 234, 0.3);
 }
+
+/* Random pick: jukebox-style cover shuffle */
+.shuffle-stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    perspective: 800px;
+}
+
+.shuffle-cover {
+    width: min(70vw, 320px);
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.shuffle-cover.flip {
+    animation: shuffle-flip ease-out;
+}
+
+@keyframes shuffle-flip {
+    from { transform: rotateX(-70deg) translateY(-12%); opacity: 0.4; }
+    to { transform: none; opacity: 1; }
+}
+
+.shuffle-cover.landed {
+    animation: shuffle-land 0.5s ease-out;
+    box-shadow: 0 0 40px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes shuffle-land {
+    0% { transform: scale(0.92); }
+    60% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.shuffle-caption {
+    max-width: min(80vw, 420px);
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 600;
+    min-height: 1.4em;
+}
