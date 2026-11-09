@@ -182,6 +182,10 @@
     let sortAscending = true;
     // Track the record that is currently spinning (for UI/LED mapping)
     let nowPlayingRecordId = null;
+    // Declared up here because the setup below calls updateNowPlayingBanner, which reads them.
+    // A let used before its line has run throws, and the setup's catch would then show no records.
+    let currentRecordId = null;  // Which record is open in the pop-up
+    let putAwayTimer = null;
 
     try {
         const collectionDataElement = document.getElementById("collection-data");
@@ -386,8 +390,6 @@
 
     let scrollPosition = 0;
 
-    // Tracks which record is open in the modal for play count updates
-    let currentRecordId = null;
 
     function openModal(record) {
         const modal = document.getElementById("trackModal");
@@ -596,8 +598,6 @@
         document.getElementById("putAwayBtn").style.display =
             nowPlayingRecordId && currentRecordId === nowPlayingRecordId ? "" : "none";
     }
-
-    let putAwayTimer = null;
 
     function updateNowPlayingBanner() {
         const banner = document.getElementById("nowPlaying");
