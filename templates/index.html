@@ -293,8 +293,9 @@
         const randomIndex = Math.floor(Math.random() * recordsToChooseFrom.length);
         const randomRecord = recordsToChooseFrom[randomIndex];
         
-        // Open the modal for the random record
+        // Open the modal for the random record, and spin the shelf lights onto it
         openModal(randomRecord);
+        findOnShelf(true);
     }
 
     let scrollPosition = 0;
@@ -428,15 +429,15 @@
         });
     }
 
-    function findOnShelf() {
+    function findOnShelf(spin = false) {
         const status = document.getElementById("findStatus");
-        status.textContent = "Finding…";
+        status.textContent = spin ? "Spinning…" : "Finding…";
         fetch("/api/leds/locate", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({ release_id: currentRecordId })
+            body: JSON.stringify({ release_id: currentRecordId, spin })
         })
         .then(response => response.json())
         .then(data => {
