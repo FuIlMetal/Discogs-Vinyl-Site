@@ -72,6 +72,21 @@ def cache_lyrics(artist: str, track_name: str, lyrics: str):
     conn.commit()
     conn.close()
 
+def search_lrclib(artist: str, track_name: str):
+    """Plain lyrics from LRCLIB (lrclib.net), a free lyrics API with no key. None if it has none."""
+    try:
+        response = requests.get("https://lrclib.net/api/search",
+                                params={"artist_name": artist, "track_name": track_name},
+                                headers={"User-Agent": "VinylPi/1.0"}, timeout=10)
+        response.raise_for_status()
+        for hit in response.json():
+            if hit.get("plainLyrics"):
+                return hit["plainLyrics"].strip()
+    except (requests.RequestException, ValueError) as e:
+        print(f"LRCLIB lookup failed for {artist} - {track_name}: {e}")
+    return None
+
+
 def search_genius_song(artist: str, track_name: str):
     """Search for a song on Genius using their public API and return the song URL"""
     try:
@@ -379,17 +394,18 @@ def get_lyrics(artist: str, track_name: str):
     
     print(f"Searching for lyrics: {clean_artist} - {clean_track}")
     
-    # Check cache first to avoid unnecessary API calls
+    # Only hits are cached. Older versions cached misses as "", which hid lyrics for good after one failed
+    # lookup, so an empty cached value is just looked up again.
     cached = get_cached_lyrics(clean_artist, clean_track)
-    if cached is not None:
-        # Return cached lyrics (even if empty string, which means not found)
-        if cached:
-            print(f"Found cached lyrics for {clean_artist} - {clean_track}")
-            return cached
-        else:
-            print(f"Found cached 'not found' for {clean_artist} - {clean_track}")
-            return None
-    
+    if cached:
+        return cached
+
+    lyrics_text = search_lrclib(clean_artist, clean_track)
+    if lyrics_text:
+        cache_lyrics(clean_artist, clean_track, lyrics_text)
+        return lyrics_text
+
+    # Backup: Genius, which is scraped and sometimes blocked
     try:
         # Step 1: Use Genius public API to search for the song
         # (No authentication required for search)
@@ -397,8 +413,6 @@ def get_lyrics(artist: str, track_name: str):
         
         if not song_url:
             print(f"No song URL found for {clean_artist} - {clean_track}")
-            # Cache empty result to avoid repeated failed lookups
-            cache_lyrics(clean_artist, clean_track, "")
             return None
         
         print(f"Found song URL: {song_url}")
@@ -414,8 +428,6 @@ def get_lyrics(artist: str, track_name: str):
             return lyrics_text
         else:
             print(f"Failed to scrape lyrics from {song_url}")
-            # Cache empty result to avoid repeated failed lookups
-            cache_lyrics(clean_artist, clean_track, "")
             return None
             
     except Exception as e:
