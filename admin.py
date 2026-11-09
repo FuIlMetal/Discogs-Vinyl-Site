@@ -180,11 +180,11 @@ def set_lights():
         return jsonify({"error": "JSON body required"}), 415
     data = request.get_json(silent=True) or {}
 
-    color = get_ambient()
+    colors = get_ambient()
     if "color" in data:
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(data["color"])):
             return jsonify({"error": "color must look like #rrggbb"}), 400
-        color = tuple(bytes.fromhex(data["color"][1:]))
+        colors = [tuple(bytes.fromhex(data["color"][1:]))]
     if "brightness" in data:
         brightness = data["brightness"]
         if type(brightness) is not int or not 0 <= brightness <= 100:
@@ -195,22 +195,22 @@ def set_lights():
             return jsonify({"error": "album_glow must be true or false"}), 400
         set_album_glow(data["album_glow"])
         if not data["album_glow"]:
-            color = None
+            colors = None
     if data.get("off"):
-        color = None
+        colors = None
 
-    if not set_ambient(color):
+    if not set_ambient(colors):
         return jsonify({"error": "The shelf lights aren't connected"}), 503
     playing = get_current_record()
     if data.get("album_glow") and playing:  # Switched on mid-record, so start glowing now
         threading.Thread(target=glow_for_record, args=(playing,), daemon=True).start()
-    return jsonify({"on": color is not None, "brightness": get_led_brightness(), "album_glow": get_album_glow()})
+    return jsonify({"on": colors is not None, "brightness": get_led_brightness(), "album_glow": get_album_glow()})
 
 
 @admin.route("/api/admin/leds/settings", methods=["POST"])
 @require_admin
 def save_light_settings():
-    """{"first_led", "last_led", "spot_seconds", "find_color"}: the usable strip range and how Find lights up."""
+    """{"first_led", "last_led", "spot_seconds", "find_color", "wave_speed"}: strip range, Find light and album wave."""
     if not request.is_json:
         return jsonify({"error": "JSON body required"}), 415
     data = request.get_json(silent=True) or {}
@@ -223,8 +223,14 @@ def save_light_settings():
     find_color = str(data.get("find_color"))
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", find_color):
         return jsonify({"error": "find_color must look like #rrggbb"}), 400
+    wave_speed = data.get("wave_speed")
+    if type(wave_speed) is not int or not 1 <= wave_speed <= 10:
+        return jsonify({"error": "Wave speed must be a whole number from 1 to 10"}), 400
 
-    save_led_settings(first_led=first_led, last_led=last_led, spot_seconds=spot_seconds, find_color=find_color.lower())
+    save_led_settings(first_led=first_led, last_led=last_led, spot_seconds=spot_seconds, find_color=find_color.lower(),
+                      wave_speed=wave_speed)
+    if len(get_ambient() or ()) > 1:  # A wave is showing, so switch it to the new speed now
+        set_ambient(get_ambient())
     try:
         positions = current_positions()
     except requests.RequestException as e:

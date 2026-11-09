@@ -72,7 +72,7 @@
       <label>Brightness <input type="range" id="lightBrightness" min="0" max="100" value="{{ brightness }}"></label>
       <button class="random-btn" id="lightOn" type="button">On</button>
       <button class="random-btn" id="lightOff" type="button">Off</button>
-      <label><input type="checkbox" id="albumGlow"{% if album_glow %} checked{% endif %}> Glow in the album's color while playing</label>
+      <label><input type="checkbox" id="albumGlow"{% if album_glow %} checked{% endif %}> Slow wave of the album's colors while playing</label>
       <span id="lightStatus" aria-live="polite"></span>
     </section>
 
@@ -80,6 +80,7 @@
       <strong>Find light</strong>
       <label>Color <input type="color" id="findColor" value="{{ led_settings.find_color }}"></label>
       <label>Stays on <input type="number" id="spotSeconds" min="5" max="600" value="{{ led_settings.spot_seconds }}"> sec</label>
+      <label>Album wave speed <input type="range" id="waveSpeed" min="1" max="10" value="{{ led_settings.wave_speed }}"></label>
       <label>Strip starts at LED <input type="number" id="firstLed" min="0" max="{{ led_count - 1 }}" value="{{ led_settings.first_led }}"></label>
       <label>ends at LED <input type="number" id="lastLed" min="0" max="{{ led_count - 1 }}" value="{{ led_count - 1 if led_settings.last_led is none else led_settings.last_led }}"></label>
       <button class="random-btn" id="saveLedSettings" type="button">Save</button>
@@ -277,6 +278,7 @@
           last_led: Number($("lastLed").value),
           spot_seconds: Number($("spotSeconds").value),
           find_color: $("findColor").value,
+          wave_speed: Number($("waveSpeed").value),
         });
         document.querySelectorAll(".admin-table tbody tr").forEach(row => {
           const r = JSON.parse(row.dataset.record);

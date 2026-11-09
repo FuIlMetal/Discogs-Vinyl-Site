@@ -7,7 +7,7 @@ import unicodedata
 import requests
 
 from discogs_api import get_collection, get_current_record, get_led_settings, get_shelf_anchors
-from led_controller import LED_COUNT, cover_color, set_ambient
+from led_controller import LED_COUNT, cover_wave, set_ambient
 
 _releases = []
 _fetched_at = 0
@@ -88,15 +88,15 @@ def thumb_for(release_id):
 
 
 def glow_for_record(release_id):
-    """Glow the shelf in the record's cover color. Run it in the background because the image fetch is slow."""
+    """Glow the shelf in a slow wave of the record's cover colors. Run it in the background because the image fetch is slow."""
     try:
         thumb = thumb_for(release_id)
     except requests.RequestException as e:
         print(f"LED: couldn't look up cover for {release_id}: {e}")
         thumb = ""
-    color = cover_color(thumb)
+    colors = cover_wave(thumb)
     if get_current_record() == release_id:  # It may have been cleared during the fetch
-        set_ambient(color)
+        set_ambient(colors)
 
 
 if __name__ == "__main__":
