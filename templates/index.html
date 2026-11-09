@@ -182,10 +182,9 @@
     let sortAscending = true;
     // Track the record that is currently spinning (for UI/LED mapping)
     let nowPlayingRecordId = null;
-    // Declared up here because the setup below calls updateNowPlayingBanner, which reads them.
+    // Declared up here because the setup below calls updateNowPlayingBanner, which reads it.
     // A let used before its line has run throws, and the setup's catch would then show no records.
     let currentRecordId = null;  // Which record is open in the pop-up
-    let putAwayTimer = null;
 
     try {
         const collectionDataElement = document.getElementById("collection-data");
@@ -603,7 +602,6 @@
         const banner = document.getElementById("nowPlaying");
         const textEl = document.getElementById("nowPlayingText");
         if (!banner || !textEl) return;
-        clearTimeout(putAwayTimer);
         updatePutAwayButton();
 
         if (!nowPlayingRecordId) {
@@ -622,14 +620,18 @@
         }
 
         textEl.textContent = `${record.artist} — ${record.title}`;
-        textEl.disabled = false;
-        document.getElementById("clearNowPlayingBtn").hidden = false;
         banner.classList.add("visible");
         // Re-render so the current card is subtly highlighted
         render();
     }
 
     function clearNowPlaying() {
+        // Put away from the banner opens the record's pop-up, where it says where the record goes back
+        const record = allRecords.find(r => r.id === nowPlayingRecordId);
+        if (record) openModal(record);  // Does nothing if the pop-up is already open
+        const status = document.getElementById("findStatus");
+        status.textContent = "Putting it away…";
+
         fetch("/api/now_playing/clear", {
             method: "POST",
             headers: {
@@ -638,28 +640,22 @@
         })
         .then(response => response.json())
         .then(data => {
-            // The server lights the spot where the record goes back; say where, then hide the banner
+            // The server lights the spot where the record goes back
             nowPlayingRecordId = null;
             updateNowPlayingBanner();
             const s = data.shelf;
-            if (!s) return;
+            if (!s) {
+                status.textContent = "Put away.";
+                return;
+            }
             const where = s.after && s.before ? `between ${s.after} and ${s.before}`
                 : s.after ? `at the end, after ${s.after}`
                 : s.before ? `at the start, before ${s.before}` : "on the shelf";
-            const message = `Goes back at #${s.number}, ${where}.` + (s.lit ? " Orange marks the spot." : "");
-            const banner = document.getElementById("nowPlaying");
-            const textEl = document.getElementById("nowPlayingText");
-            textEl.textContent = message;
-            textEl.disabled = true;
-            document.getElementById("clearNowPlayingBtn").hidden = true;
-            banner.classList.add("visible");
-            putAwayTimer = setTimeout(updateNowPlayingBanner, 15000);
-            if (document.getElementById("trackModal").classList.contains("show")) {
-                document.getElementById("findStatus").textContent = message;
-            }
+            status.textContent = `Goes back at #${s.number}, ${where}.` + (s.lit ? " Orange marks the spot." : "");
         })
         .catch(error => {
             console.error("Error clearing now playing:", error);
+            status.textContent = "Couldn't put it away. Try again.";
         });
     }
 

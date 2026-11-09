@@ -90,10 +90,6 @@ body.modal-open {
     text-underline-offset: 3px;
 }
 
-.now-playing-text:disabled {
-    cursor: default;
-    text-decoration: none;
-}
 
 .now-playing-clear {
     background: transparent;
