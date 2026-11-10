@@ -25,10 +25,10 @@ from discogs_api import (
     save_led_settings,
     set_album_glow,
     set_led_brightness,
-    set_shelf_anchor,
 )
 from led_controller import LED_COUNT, get_ambient, set_ambient, show_spots
-from shelf import artist_name, current_positions, glow_for_record, neighbors, positions_for, shelf_ids
+from shelf import (artist_name, current_positions, glow_for_record, neighbors, positions_for, save_spot as pin_record,
+                   shelf_count, shelf_ids)
 
 admin = Blueprint("admin", __name__)
 
@@ -91,7 +91,8 @@ def admin_page():
     except requests.RequestException as e:
         errors.append(f"Couldn't load collection value: {e}")
 
-    shelf_numbers = {release_id: i + 1 for i, release_id in enumerate(shelf_ids(releases))}
+    ids = shelf_ids(releases)
+    shelf_numbers = {release_id: i + 1 for i, release_id in enumerate(ids)}
     positions = positions_for(releases)
     anchors = get_shelf_anchors()
     beside = neighbors(releases)
@@ -132,7 +133,7 @@ def admin_page():
     return render_template("admin.html", records=records, total=len(releases), value=value,
                            errors=errors, search=search, sort=sort, desc=desc,
                            led_count=LED_COUNT, brightness=get_led_brightness(), album_glow=get_album_glow(),
-                           led_settings=get_led_settings())
+                           led_settings=get_led_settings(), shelf_size=len(ids))
 
 
 @admin.route("/api/admin/price/<int:release_id>")
@@ -230,8 +231,12 @@ def save_light_settings():
     if type(wave_speed) is not int or not 1 <= wave_speed <= 10:
         return jsonify({"error": "Wave speed must be a whole number from 1 to 10"}), 400
 
+    try:
+        count = shelf_count()  # Saving start/end confirms them for this many records
+    except requests.RequestException as e:
+        return jsonify({"error": f"Couldn't load the collection, so nothing was saved: {e}"}), 502
     save_led_settings(first_led=first_led, last_led=last_led, spot_seconds=spot_seconds, find_color=find_color.lower(),
-                      wave_speed=wave_speed)
+                      wave_speed=wave_speed, range_count=count)
     if len(get_ambient() or ()) > 1:  # A wave is showing, so switch it to the new speed now
         set_ambient(get_ambient())
     try:
@@ -258,7 +263,7 @@ def show_led():
 @admin.route("/api/admin/shelf/spot", methods=["POST"])
 @require_admin
 def save_spot():
-    """Pin a record to an LED. Estimated records around it shift, so send every position back."""
+    """Correct a record's LED. Records back to the saved spot on each side shift, so send every position back."""
     if not request.is_json:
         return jsonify({"error": "JSON body required"}), 415
     data = request.get_json(silent=True) or {}
@@ -266,12 +271,14 @@ def save_spot():
     if type(release_id) is not int or led is None:
         return jsonify({"error": f"release_id must be an integer and led from 0 to {LED_COUNT - 1}"}), 400
 
-    set_shelf_anchor(release_id, led)
     try:
-        positions = current_positions()
+        positions = pin_record(release_id, led)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except requests.RequestException as e:
-        return jsonify({"error": f"Saved, but couldn't refresh the other spots: {e}"}), 502
-    return jsonify({"positions": positions})
+        return jsonify({"error": f"Couldn't load the collection, so nothing was saved: {e}"}), 502
+    settings = get_led_settings()
+    return jsonify({"positions": positions, "first_led": settings["first_led"], "last_led": settings["last_led"]})
 
 
 if __name__ == "__main__":

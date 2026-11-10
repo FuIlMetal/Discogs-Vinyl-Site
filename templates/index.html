@@ -859,7 +859,8 @@
                 const between = s.after && s.before ? `between ${s.after} and ${s.before}`
                     : s.after ? `at the end, after ${s.after}`
                     : s.before ? `at the start, before ${s.before}` : "on the shelf";
-                setAddStatus(`Shelve it at #${s.number}, ${between}.` + (s.lit ? " The lights show the spot." : ""));
+                setAddStatus(`Shelve it at #${s.number}, ${between}.` + (s.lit ? " The lights show the spot." : "")
+                    + ({{ 'true' if is_admin else 'false' }} ? " If the first or last record moved, update the strip start/end in Admin." : ""));
             }
             if (data.record) {
                 allRecords.push(data.record);

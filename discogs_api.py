@@ -14,6 +14,7 @@ LED_SETTING_COLUMNS = {
     "spot_seconds": "INTEGER NOT NULL DEFAULT 60",
     "find_color": "TEXT NOT NULL DEFAULT '#ffffff'",
     "wave_speed": "INTEGER NOT NULL DEFAULT 5",
+    "range_count": "INTEGER",  # Records on the shelf when start/end were last saved, to ask again after adds/removes
 }
 
 
@@ -124,6 +125,14 @@ def init_db():
         )
     """)
 
+    # LEDs from the record before to this one. Saving a spot sets these, so an add or remove only nudges neighbors.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS shelf_steps (
+            release_id INTEGER PRIMARY KEY,
+            step REAL NOT NULL
+        )
+    """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS led_settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -158,15 +167,35 @@ def set_shelf_anchor(release_id: int, led: int):
     conn.close()
 
 
+def get_shelf_steps():
+    """{release_id: LEDs from the record on its left}"""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute("SELECT release_id, step FROM shelf_steps").fetchall()
+    conn.close()
+    return dict(rows)
+
+
+def save_shelf_steps(steps: dict):
+    """Replace every step at once (the whole shelf is recalculated each time)."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    with conn:
+        conn.execute("DELETE FROM shelf_steps")
+        conn.executemany("INSERT INTO shelf_steps (release_id, step) VALUES (?, ?)", steps.items())
+    conn.close()
+
+
 def get_led_settings():
     """Find light and strip range settings from admin, with defaults until they're saved."""
     init_db()
     conn = sqlite3.connect(DB_PATH)
-    row = conn.execute("SELECT first_led, last_led, spot_seconds, find_color, wave_speed FROM led_settings WHERE id = 1").fetchone()
+    row = conn.execute("SELECT first_led, last_led, spot_seconds, find_color, wave_speed, range_count "
+                       "FROM led_settings WHERE id = 1").fetchone()
     conn.close()
-    first_led, last_led, spot_seconds, find_color, wave_speed = row or (0, None, 60, "#ffffff", 5)
+    first_led, last_led, spot_seconds, find_color, wave_speed, range_count = row or (0, None, 60, "#ffffff", 5, None)
     return {"first_led": first_led, "last_led": last_led, "spot_seconds": spot_seconds, "find_color": find_color,
-            "wave_speed": wave_speed}
+            "wave_speed": wave_speed, "range_count": range_count}
 
 
 def save_led_settings(**values):
@@ -722,5 +751,6 @@ def forget_release(release_id: int):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM releases WHERE release_id = ?", (release_id,))
     conn.execute("DELETE FROM shelf_anchors WHERE release_id = ?", (release_id,))
+    conn.execute("DELETE FROM shelf_steps WHERE release_id = ?", (release_id,))
     conn.commit()
     conn.close()

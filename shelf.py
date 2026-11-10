@@ -6,7 +6,8 @@ import unicodedata
 
 import requests
 
-from discogs_api import get_collection, get_current_record, get_led_settings, get_shelf_anchors
+from discogs_api import (get_collection, get_current_record, get_led_settings, get_shelf_anchors, get_shelf_steps,
+                         save_led_settings, save_shelf_steps, set_shelf_anchor)
 from led_controller import LED_COUNT, cover_wave, set_ambient
 
 _releases = []
@@ -41,27 +42,94 @@ def shelf_ids(releases):
     return list(dict.fromkeys(i for i in ids if i))  # shortcut: two copies of a release share one spot
 
 
-def shelf_positions(ids, anchors, first_led, last_led):
-    """LED for each id: saved anchors stay exact, and the rest are spaced evenly, inside first_led..last_led."""
-    if not ids:
-        return {}
-    points = [(i, anchors[r]) for i, r in enumerate(ids) if r in anchors]
-    if not points or points[0][0] != 0:
-        points.insert(0, (0, first_led))
-    if points[-1][0] != len(ids) - 1:
-        points.append((len(ids) - 1, last_led))
+def _spots(ids, steps, first_led, last_led):
+    """Exact (unrounded) LED of each record. Steps are spread to fill first_led..last_led, so when the
+    start or end moves, or a record is added or removed, the whole shelf shifts a little to fit."""
+    known = [steps[r] for r in ids[1:] if r in steps]
+    default = sum(known) / len(known) if known else 1  # A new record is guessed to be as wide as the average
+    gaps = [steps.get(r, default) for r in ids[1:]]
+    scale = (last_led - first_led) / (sum(gaps) or 1)
+    spots = [first_led]
+    for gap in gaps:
+        spots.append(spots[-1] + gap * scale)
+    return spots
 
-    positions = {ids[points[0][0]]: points[0][1]}
-    for (i1, led1), (i2, led2) in zip(points, points[1:]):
-        for i in range(i1 + 1, i2 + 1):
-            positions[ids[i]] = round(led1 + (led2 - led1) * (i - i1) / (i2 - i1))
-    return positions
+
+def shelf_positions(ids, steps, first_led, last_led):
+    """{release_id: LED}, left to right inside first_led..last_led."""
+    return {r: round(led) for r, led in zip(ids, _spots(ids, steps, first_led, last_led))}
+
+
+def pin_spot(ids, pinned, steps, first_led, last_led, release_id, led):
+    """Correct one record's estimate to led. Records back to the saved spot on each side (or the shelf ends)
+    stretch or squeeze to fit, and saved spots beyond them stay put. Pinning the first or last record moves
+    the start or end. Returns (steps, first_led, last_led). Raises ValueError if led is past a saved neighbor."""
+    k = ids.index(release_id)
+    spots = _spots(ids, steps, first_led, last_led)
+    marks = [i for i, r in enumerate(ids) if r in pinned and i != k]
+    a = max([i for i in marks if i < k], default=0)
+    b = min([i for i in marks if i > k], default=len(ids) - 1)
+    low = spots[a] if a < k else 0
+    high = spots[b] if b > k else LED_COUNT - 1
+    if not low <= led <= high:
+        raise ValueError(f"That's past a saved record next to it: pick an LED from {round(low)} to {round(high)}")
+
+    gaps = [spots[i] - spots[i - 1] for i in range(1, len(ids))]  # gaps[i - 1] is the step onto record i
+    for lo, hi, start, end in ((a, k, spots[a], led), (k, b, led, spots[b])):
+        old = spots[hi] - spots[lo]
+        for i in range(lo + 1, hi + 1):
+            gaps[i - 1] = gaps[i - 1] * (end - start) / old if old else (end - start) / (hi - lo)
+    if k == 0:
+        first_led = led
+    if k == len(ids) - 1:
+        last_led = led
+    return dict(zip(ids[1:], gaps)), first_led, last_led
+
+
+def _range(settings):
+    return settings["first_led"], LED_COUNT - 1 if settings["last_led"] is None else settings["last_led"]
 
 
 def positions_for(releases):
-    settings = get_led_settings()
-    last_led = LED_COUNT - 1 if settings["last_led"] is None else settings["last_led"]
-    return shelf_positions(shelf_ids(releases), get_shelf_anchors(), settings["first_led"], last_led)
+    ids, steps, anchors = shelf_ids(releases), get_shelf_steps(), get_shelf_anchors()
+    first_led, last_led = _range(get_led_settings())
+    if anchors and not steps and len(ids) > 1:
+        # Spots saved before steps existed: replay them left to right so they keep their LEDs
+        for r in ids:
+            if r in anchors:
+                try:
+                    steps, first_led, last_led = pin_spot(ids, anchors, steps, first_led, last_led, r, anchors[r])
+                except ValueError:
+                    pass  # Saved out of order; skip it
+        save_shelf_steps(steps)
+        save_led_settings(first_led=first_led, last_led=last_led)
+    return shelf_positions(ids, steps, first_led, last_led)
+
+
+def save_spot(release_id, led):
+    """Save that a record sits at led (from the admin page). Returns every record's new LED.
+    Raises ValueError if it isn't on the shelf or led doesn't fit, and requests.RequestException."""
+    releases = _cached_releases(300)
+    ids = shelf_ids(releases)
+    if release_id not in ids:
+        releases = _cached_releases(0)  # Maybe it was just added
+        ids = shelf_ids(releases)
+    if release_id not in ids:
+        raise ValueError("That record isn't in the collection")
+    positions_for(releases)  # Runs the one-time move from old saved spots first
+    first_led, last_led = _range(get_led_settings())
+    steps, first_led, last_led = pin_spot(ids, get_shelf_anchors(), get_shelf_steps(), first_led, last_led,
+                                          release_id, led)
+    if first_led >= last_led:
+        raise ValueError("The first record has to be left of the last one")
+    save_shelf_steps(steps)
+    save_led_settings(first_led=first_led, last_led=last_led)
+    set_shelf_anchor(release_id, led)
+    return positions_for(releases)
+
+
+def shelf_count(max_age=0):
+    return len(shelf_ids(_cached_releases(max_age)))
 
 
 def _cached_releases(max_age):
@@ -142,13 +210,32 @@ if __name__ == "__main__":
 
     assert shelf_positions([], {}, 0, 101) == {}
     assert shelf_positions([7], {}, 0, 101) == {7: 0}
-    assert shelf_positions([7], {7: 40}, 0, 101) == {7: 40}
     assert shelf_positions([1, 2, 3], {}, 0, 100) == {1: 0, 2: 50, 3: 100}
-    # Anchors stay exact, and the gaps on each side of them are evenly filled
-    spots = shelf_positions(list("abcde"), {"b": 20, "d": 40}, 0, 100)
-    assert spots == {"a": 0, "b": 20, "c": 30, "d": 40, "e": 100}, spots
-    spots = shelf_positions(list("abc"), {"a": 10, "c": 90}, 0, 100)
-    assert spots == {"a": 10, "b": 50, "c": 90}, spots
-    # Unsaved ends land on the usable range, not the strip's ends
     assert shelf_positions([1, 2, 3], {}, 4, 96) == {1: 4, 2: 50, 3: 96}
+
+    # Pinning c stretches a..c and squeezes c..e; the ends stay put
+    ids = list("abcde")
+    steps, first, last = pin_spot(ids, {}, {}, 0, 100, "c", 30)
+    assert (first, last) == (0, 100) and shelf_positions(ids, steps, first, last) ==         {"a": 0, "b": 15, "c": 30, "d": 65, "e": 100}
+    # Pinning d next only moves records between c (saved) and the end
+    steps, first, last = pin_spot(ids, {"c": 30}, steps, first, last, "d", 40)
+    assert shelf_positions(ids, steps, first, last) == {"a": 0, "b": 15, "c": 30, "d": 40, "e": 100}
+    # Can't pin past a saved neighbor
+    try:
+        pin_spot(ids, {"c": 30}, steps, first, last, "d", 20)
+        raise AssertionError("pinned past a saved neighbor")
+    except ValueError:
+        pass
+    # Pinning the last record moves the end, and everything else keeps its spot
+    steps2, first2, last2 = pin_spot(ids, {"c": 30, "d": 40}, steps, first, last, "e", 90)
+    assert last2 == 90 and shelf_positions(ids, steps2, first2, last2) == {"a": 0, "b": 15, "c": 30, "d": 40, "e": 90}
+
+    # A record added between c and d gets the average width; with the end moved out by about that much,
+    # everything left of it stays put and everything right of it moves over by one record
+    wide = list("abcXde")
+    spots = shelf_positions(wide, steps, first, last + 25)
+    assert spots["a"] == 0 and spots["c"] == 30 and spots["X"] == 55 and spots["d"] == 65, spots
+    # Removing a record without moving the end spreads everything a little to fill the gap
+    spots = shelf_positions(list("abde"), steps, first, last)
+    assert spots == {"a": 0, "b": 18, "d": 29, "e": 100}, spots
     print("shelf self-check OK")
