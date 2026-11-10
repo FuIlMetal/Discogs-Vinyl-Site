@@ -167,6 +167,24 @@ def set_shelf_anchor(release_id: int, led: int):
     conn.close()
 
 
+def delete_shelf_anchor(release_id: int):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM shelf_anchors WHERE release_id = ?", (release_id,))
+    conn.commit()
+    conn.close()
+
+
+def clear_shelf_spots():
+    """Forget every saved spot, so records go back to even spacing between start and end."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    with conn:
+        conn.execute("DELETE FROM shelf_anchors")
+        conn.execute("DELETE FROM shelf_steps")
+    conn.close()
+
+
 def get_shelf_steps():
     """{release_id: LEDs from the record on its left}"""
     init_db()

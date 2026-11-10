@@ -88,6 +88,7 @@
       <label>Strip starts at LED <input type="number" id="firstLed" min="0" max="{{ led_count - 1 }}" value="{{ led_settings.first_led }}"></label>
       <label>ends at LED <input type="number" id="lastLed" min="0" max="{{ led_count - 1 }}" value="{{ led_count - 1 if led_settings.last_led is none else led_settings.last_led }}"></label>
       <button class="random-btn" id="saveLedSettings" type="button">Save</button>
+      <button class="danger-btn" id="resetSpots" type="button">Reset all saved spots</button>
       <span id="ledSettingsStatus" aria-live="polite"></span>
     </section>
 
@@ -148,6 +149,7 @@
       <button class="random-btn" id="spotLeft" type="button" aria-label="Move light left">◀</button>
       <button class="random-btn" id="spotRight" type="button" aria-label="Move light right">▶</button>
       <button class="random-btn" id="spotSave" type="button">Save spot</button>
+      <button class="random-btn" id="spotRemove" type="button">Remove save</button>
     </div>
     <dl>
       <dt>Year</dt><dd id="dlgYear"></dd>
@@ -186,6 +188,7 @@
     function describeSpot(r, led, note) {
       const kind = led === r.led && r.pinned ? "saved" : (led === r.led ? "estimated" : "not saved yet");
       $("dlgSpot").textContent = `Shelf #${r.shelf} · LED ${led} (${kind})${note ? " · " + note : ""}`;
+      $("spotRemove").hidden = !r.pinned;
       $("dlgNeighbors").textContent = r.after && r.before ? `Goes between ${r.after} and ${r.before}`
         : r.after ? `Last on the shelf, after ${r.after}`
         : r.before ? `First on the shelf, before ${r.before}` : "";
@@ -240,21 +243,49 @@
     $("spotLeft").addEventListener("click", () => { if (spotLed > 0) lightSpot(spotLed - 1); });
     $("spotRight").addEventListener("click", () => { if (spotLed < LED_COUNT - 1) lightSpot(spotLed + 1); });
 
+    // Saving or removing a spot moves the records around it, so refresh every row's LED
+    function updateRows(positions, id, pinned) {
+      document.querySelectorAll(".admin-table tbody tr").forEach(row => {
+        const r = JSON.parse(row.dataset.record);
+        if (r.id in positions) r.led = positions[r.id];
+        if (id === null || r.id === id) r.pinned = pinned;
+        row.dataset.record = JSON.stringify(r);
+      });
+    }
+
     $("spotSave").addEventListener("click", async () => {
       const saved = JSON.parse(currentRow.dataset.record);
       try {
         const d = await postJson("/api/admin/shelf/spot", { release_id: saved.id, led: spotLed });
-        document.querySelectorAll(".admin-table tbody tr").forEach(row => {
-          const r = JSON.parse(row.dataset.record);
-          if (r.id in d.positions) r.led = d.positions[r.id];
-          if (r.id === saved.id) r.pinned = true;
-          row.dataset.record = JSON.stringify(r);
-        });
+        updateRows(d.positions, saved.id, true);
         $("firstLed").value = d.first_led;  // Saving the first or last record moves the start or end
         $("lastLed").value = d.last_led;
         describeSpot(JSON.parse(currentRow.dataset.record), spotLed);
       } catch (err) {
         describeSpot(saved, spotLed, err.message);
+      }
+    });
+
+    $("spotRemove").addEventListener("click", async () => {
+      const saved = JSON.parse(currentRow.dataset.record);
+      try {
+        const d = await postJson("/api/admin/shelf/spot/remove", { release_id: saved.id });
+        updateRows(d.positions, saved.id, false);
+        lightSpot(JSON.parse(currentRow.dataset.record).led);
+      } catch (err) {
+        describeSpot(saved, spotLed, err.message);
+      }
+    });
+
+    $("resetSpots").addEventListener("click", async () => {
+      if (!confirm("Forget every saved spot? Records go back to even spacing between the start and end.")) return;
+      $("ledSettingsStatus").textContent = "";
+      try {
+        const d = await postJson("/api/admin/shelf/reset", {});
+        updateRows(d.positions, null, false);
+        $("ledSettingsStatus").textContent = "All saved spots cleared";
+      } catch (err) {
+        $("ledSettingsStatus").textContent = err.message;
       }
     });
 

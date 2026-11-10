@@ -10,6 +10,7 @@ import requests
 from flask import Blueprint, abort, jsonify, render_template, request
 
 from discogs_api import (
+    clear_shelf_spots,
     delete_collection_instance,
     forget_release,
     get_album_glow,
@@ -27,7 +28,7 @@ from discogs_api import (
     set_led_brightness,
 )
 from led_controller import LED_COUNT, get_ambient, set_ambient, show_spots
-from shelf import (artist_name, current_positions, glow_for_record, neighbors, positions_for, save_spot as pin_record,
+from shelf import (artist_name, current_positions, glow_for_record, neighbors, positions_for, remove_spot, save_spot as pin_record,
                    shelf_count, shelf_ids)
 
 admin = Blueprint("admin", __name__)
@@ -279,6 +280,37 @@ def save_spot():
         return jsonify({"error": f"Couldn't load the collection, so nothing was saved: {e}"}), 502
     settings = get_led_settings()
     return jsonify({"positions": positions, "first_led": settings["first_led"], "last_led": settings["last_led"]})
+
+
+
+@admin.route("/api/admin/shelf/spot/remove", methods=["POST"])
+@require_admin
+def remove_saved_spot():
+    """Undo one record's saved spot. Records around it go back to even spacing."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    release_id = (request.get_json(silent=True) or {}).get("release_id")
+    if type(release_id) is not int:
+        return jsonify({"error": "release_id must be an integer"}), 400
+    try:
+        positions = remove_spot(release_id)
+    except requests.RequestException as e:
+        return jsonify({"error": f"Couldn't load the collection, so nothing was changed: {e}"}), 502
+    return jsonify({"positions": positions})
+
+
+@admin.route("/api/admin/shelf/reset", methods=["POST"])
+@require_admin
+def reset_spots():
+    """Forget every saved spot. Start and end stay."""
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 415
+    clear_shelf_spots()
+    try:
+        positions = current_positions()
+    except requests.RequestException as e:
+        return jsonify({"error": f"Reset, but couldn't refresh the spots: {e}"}), 502
+    return jsonify({"positions": positions})
 
 
 if __name__ == "__main__":

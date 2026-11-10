@@ -6,7 +6,7 @@ import unicodedata
 
 import requests
 
-from discogs_api import (get_collection, get_current_record, get_led_settings, get_shelf_anchors, get_shelf_steps,
+from discogs_api import (delete_shelf_anchor, get_collection, get_current_record, get_led_settings, get_shelf_anchors, get_shelf_steps,
                          save_led_settings, save_shelf_steps, set_shelf_anchor)
 from led_controller import LED_COUNT, cover_wave, set_ambient
 
@@ -86,6 +86,20 @@ def pin_spot(ids, pinned, steps, first_led, last_led, release_id, led):
     return dict(zip(ids[1:], gaps)), first_led, last_led
 
 
+def unpin_spot(ids, pinned, steps, first_led, last_led, release_id):
+    """Undo a saved spot: records between the saved spots on each side go back to even spacing.
+    Returns the new steps."""
+    k = ids.index(release_id)
+    spots = _spots(ids, steps, first_led, last_led)
+    marks = [i for i, r in enumerate(ids) if r in pinned and i != k]
+    a = max([i for i in marks if i < k], default=0)
+    b = min([i for i in marks if i > k], default=len(ids) - 1)
+    gaps = [spots[i] - spots[i - 1] for i in range(1, len(ids))]
+    for i in range(a + 1, b + 1):
+        gaps[i - 1] = (spots[b] - spots[a]) / (b - a)
+    return dict(zip(ids[1:], gaps))
+
+
 def _range(settings):
     return settings["first_led"], LED_COUNT - 1 if settings["last_led"] is None else settings["last_led"]
 
@@ -125,6 +139,19 @@ def save_spot(release_id, led):
     save_shelf_steps(steps)
     save_led_settings(first_led=first_led, last_led=last_led)
     set_shelf_anchor(release_id, led)
+    return positions_for(releases)
+
+
+def remove_spot(release_id):
+    """Undo a record's saved spot (from the admin page). Returns every record's new LED.
+    Can raise requests.RequestException."""
+    releases = _cached_releases(300)
+    ids = shelf_ids(releases)
+    if release_id in ids and len(ids) > 1:
+        positions_for(releases)  # Runs the one-time move from old saved spots first
+        steps = unpin_spot(ids, get_shelf_anchors(), get_shelf_steps(), *_range(get_led_settings()), release_id)
+        save_shelf_steps(steps)
+    delete_shelf_anchor(release_id)
     return positions_for(releases)
 
 
@@ -229,6 +256,10 @@ if __name__ == "__main__":
     # Pinning the last record moves the end, and everything else keeps its spot
     steps2, first2, last2 = pin_spot(ids, {"c": 30, "d": 40}, steps, first, last, "e", 90)
     assert last2 == 90 and shelf_positions(ids, steps2, first2, last2) == {"a": 0, "b": 15, "c": 30, "d": 40, "e": 90}
+
+    # Removing d's save puts c..e back to even spacing; a..c keeps c's correction
+    steps3 = unpin_spot(ids, {"c": 30, "d": 40}, steps, first, last, "d")
+    assert shelf_positions(ids, steps3, first, last) == {"a": 0, "b": 15, "c": 30, "d": 65, "e": 100}
 
     # A record added between c and d gets the average width; with the end moved out by about that much,
     # everything left of it stays put and everything right of it moves over by one record
