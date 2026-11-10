@@ -59,11 +59,12 @@ The auto-updater installs the Python packages. No nginx change is needed.
 
 ## Sort and check the shelf
 
-1. In `/admin` under **Find light**, step **Strip starts at LED** and **ends at LED** until the lit LED sits over the first and last record slot, then **Save**. Records without a saved spot stay inside that range.
-2. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order.
-3. Tap the **first** record on the shelf. Use ◀ ▶ to move the light onto it, then **Save spot**. Do the same for the **last** record.
-4. Do the same for about every 10th record in between. Records between saved spots are spaced evenly.
-5. Tap any record to check where its light lands.
+1. The table starts in shelf order, and **#** is each record's place from left to right. Shelve the records in that order and keep them that way.
+2. In `/admin` under **Find light**, step **Strip starts at LED** and **ends at LED** until the lit LED sits over the first and last record, then **Save**. Every record is spaced evenly between them as a first guess.
+3. Tap a record whose light is off. Use ◀ ▶ to move the light onto it, then **Save spot**. Each save corrects that guess: the records back to the nearest saved record on each side (or the shelf ends) stretch or squeeze to fit, and saved records stay put. Saving the first or last record moves the start or end.
+4. Do that wherever the light is off, about every 10th record, until spot checks land.
+
+**Adding or removing a record:** the site remembers how wide each stretch of the shelf is, so a new record is guessed to be average width and the records around it shift over. If the first or last record moved, fix the start/end and **Save**. Until you press Save, `/admin` shows a reminder (press Save even if nothing moved).
 
 Order is by artist name, the same as the home page, ignoring a leading "The": The Alarm files under A and The Who under W. Miles Davis still files under M. Tap a record in `/admin` to see which records it goes between.
 

@@ -76,6 +76,10 @@
       <span id="lightStatus" aria-live="polite"></span>
     </section>
 
+    <p class="admin-error" id="rangeCheck"{% if led_settings.range_count == shelf_size %} hidden{% endif %}>
+      Records were added or removed since the strip start/end were saved. If the first or last record moved,
+      fix the start/end below. Either way, press Save to confirm them.
+    </p>
     <section class="admin-lights" aria-label="Find light and strip range">
       <strong>Find light</strong>
       <label>Color <input type="color" id="findColor" value="{{ led_settings.find_color }}"></label>
@@ -246,6 +250,8 @@
           if (r.id === saved.id) r.pinned = true;
           row.dataset.record = JSON.stringify(r);
         });
+        $("firstLed").value = d.first_led;  // Saving the first or last record moves the start or end
+        $("lastLed").value = d.last_led;
         describeSpot(JSON.parse(currentRow.dataset.record), spotLed);
       } catch (err) {
         describeSpot(saved, spotLed, err.message);
@@ -290,6 +296,7 @@
           row.dataset.record = JSON.stringify(r);
         });
         $("ledSettingsStatus").textContent = "Saved";
+        $("rangeCheck").hidden = true;
       } catch (err) {
         $("ledSettingsStatus").textContent = err.message;
       }
@@ -311,6 +318,7 @@
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || "Delete failed");
         currentRow.remove();
+        $("rangeCheck").hidden = false;
         $("shownCount").textContent = Number($("shownCount").textContent) - 1;
         $("totalCount").textContent = Number($("totalCount").textContent) - 1;
         dialog.close();
